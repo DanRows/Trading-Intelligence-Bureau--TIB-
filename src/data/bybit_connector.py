@@ -16,6 +16,19 @@ class BybitConnector:
         self.logger = logging.getLogger(__name__)
         self.rate_limit_delay = 0.1  # 100ms entre llamadas
         
+    async def test_connection(self) -> bool:
+        """Prueba la conexión con Bybit"""
+        try:
+            await asyncio.sleep(self.rate_limit_delay)
+            response = self.session.get_tickers(
+                category="spot",
+                symbol="BTCUSDT"
+            )
+            return response['retCode'] == 0
+        except Exception as e:
+            self.logger.error(f"Error testing connection: {str(e)}")
+            return False
+
     async def get_kline_data(
         self, 
         symbol: str, 
@@ -88,16 +101,3 @@ class BybitConnector:
         if symbol in self.trading_pairs:
             self.trading_pairs.remove(symbol)
             self.logger.info(f"Removed trading pair: {symbol}")
-
-    async def test_connection(self) -> bool:
-        """Prueba la conexión con Bybit"""
-        try:
-            await asyncio.sleep(self.rate_limit_delay)
-            response = self.session.get_tickers(
-                category="spot",
-                symbol="BTCUSDT"
-            )
-            return response['retCode'] == 0
-        except Exception as e:
-            self.logger.error(f"Error testing connection: {str(e)}")
-            return False
