@@ -4,7 +4,7 @@ from typing import Dict, Any, List
 from datetime import datetime
 import asyncio
 import aiohttp
-from aiohttp import ClientTimeout
+from aiohttp import ClientTimeout, ClientSession
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,14 @@ class RealtimeService:
             "ADAUSDT": "ADA"
         }
         self.realtime_data = {}
-        self.timeout = ClientTimeout(total=10)  # 10 segundos de timeout
+        self.timeout = ClientTimeout(total=10)
+        self.session = None
+        
+    async def _get_session(self) -> ClientSession:
+        """Obtiene o crea una sesión de aiohttp"""
+        if self.session is None or self.session.closed:
+            self.session = ClientSession(timeout=self.timeout)
+        return self.session
         
     async def get_current_price(self, symbol: str) -> Dict[str, Any]:
         """Obtiene el precio actual de un símbolo"""
@@ -36,18 +43,18 @@ class RealtimeService:
                 "e": "Binance"
             }
             
-            async with aiohttp.ClientSession(timeout=self.timeout) as session:
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        if 'USD' in data:
-                            return {
-                                'price': data['USD'],
-                                'timestamp': datetime.now(),
-                                'symbol': symbol
-                            }
-                    else:
-                        logger.error(f"Error en la API: {response.status} - {await response.text()}")
+            session = await self._get_session()
+            async with session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if 'USD' in data:
+                        return {
+                            'price': data['USD'],
+                            'timestamp': datetime.now(),
+                            'symbol': symbol
+                        }
+                else:
+                    logger.error(f"Error en la API: {response.status} - {await response.text()}")
             return {}
             
         except asyncio.TimeoutError:
@@ -72,25 +79,25 @@ class RealtimeService:
                 "e": "Binance"
             }
             
-            async with aiohttp.ClientSession(timeout=self.timeout) as session:
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        if 'RAW' in data and crypto_symbol in data['RAW']:
-                            raw_data = data['RAW'][crypto_symbol]['USD']
-                            return {
-                                'symbol': symbol,
-                                'price': raw_data.get('PRICE', 0),
-                                'volume_24h': raw_data.get('VOLUME24HOUR', 0),
-                                'high_24h': raw_data.get('HIGH24HOUR', 0),
-                                'low_24h': raw_data.get('LOW24HOUR', 0),
-                                'change_24h': raw_data.get('CHANGEPCT24HOUR', 0),
-                                'market_cap': raw_data.get('MKTCAP', 0),
-                                'last_update': datetime.fromtimestamp(raw_data.get('LASTUPDATE', 0)),
-                                'supply': raw_data.get('SUPPLY', 0)
-                            }
-                    else:
-                        logger.error(f"Error en la API: {response.status} - {await response.text()}")
+            session = await self._get_session()
+            async with session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if 'RAW' in data and crypto_symbol in data['RAW']:
+                        raw_data = data['RAW'][crypto_symbol]['USD']
+                        return {
+                            'symbol': symbol,
+                            'price': raw_data.get('PRICE', 0),
+                            'volume_24h': raw_data.get('VOLUME24HOUR', 0),
+                            'high_24h': raw_data.get('HIGH24HOUR', 0),
+                            'low_24h': raw_data.get('LOW24HOUR', 0),
+                            'change_24h': raw_data.get('CHANGEPCT24HOUR', 0),
+                            'market_cap': raw_data.get('MKTCAP', 0),
+                            'last_update': datetime.fromtimestamp(raw_data.get('LASTUPDATE', 0)),
+                            'supply': raw_data.get('SUPPLY', 0)
+                        }
+                else:
+                    logger.error(f"Error en la API: {response.status} - {await response.text()}")
             return {}
             
         except asyncio.TimeoutError:
@@ -121,7 +128,12 @@ class RealtimeService:
         except Exception as e:
             logger.error(f"Error updating all symbols: {str(e)}")
             return {}
-        
+            
+    async def close(self):
+        """Cierra la sesión de aiohttp"""
+        if self.session and not self.session.closed:
+            await self.session.close()
+            
     def get_available_symbols(self) -> List[str]:
         """Retorna la lista de símbolos disponibles"""
         return list(self.symbols.keys())
@@ -129,3 +141,11 @@ class RealtimeService:
     def get_last_data(self, symbol: str) -> Dict[str, Any]:
         """Retorna los últimos datos almacenados para un símbolo"""
         return self.realtime_data.get(symbol, {})
+        
+    async def __aenter__(self):
+        """Soporte para context manager async"""
+        return self
+        
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Cleanup al salir del context manager"""
+        await self.close()

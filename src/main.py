@@ -84,7 +84,6 @@ async def init_app():
         with st.spinner(f'Verificando conexión con {exchange.title()}...'):
             if not connector.test_connection():
                 st.error(f"❌ No se pudo conectar con {exchange.title()}. Verifica la conexión.")
-                # Limpiar credenciales inválidas si no es Yahoo
                 if exchange != 'yahoo':
                     if f'{exchange.upper()}_API_KEY' in st.session_state:
                         del st.session_state[f'{exchange.upper()}_API_KEY']
@@ -104,8 +103,8 @@ async def init_app():
                 
             analyses = analyzer.analyze_market(market_data)
         
-        dashboard = Dashboard(market_data, analyses)
-        dashboard.render()
+        async with Dashboard(market_data, analyses) as dashboard:
+            dashboard.render()
         
     except Exception as e:
         error_msg = f"Error en la aplicación: {str(e)}"

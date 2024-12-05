@@ -4,13 +4,23 @@ from datetime import datetime
 import asyncio
 from typing import Dict, Any, List
 import pandas as pd
-from data.realtime_data import RealtimeDataService
+from data.realtime_service import RealtimeService
 
 class Dashboard:
     def __init__(self, market_data: Dict[str, Any], analyses: Dict[str, Any]):
         self.market_data = market_data
         self.analyses = analyses
+        self.realtime_service = RealtimeService()
         
+    async def get_realtime_data(self, symbol: str) -> Dict[str, Any]:
+        """Obtiene datos en tiempo real para un símbolo"""
+        try:
+            data = await self.realtime_service.get_full_data(symbol)
+            return data
+        except Exception as e:
+            st.error(f"Error obteniendo datos en tiempo real: {str(e)}")
+            return {}
+            
     def render(self):
         """Renderiza el dashboard"""
         st.set_page_config(
@@ -42,78 +52,44 @@ class Dashboard:
         """Renderiza el análisis de un par"""
         st.subheader(f"Análisis de {pair}")
         
-        # Datos en tiempo real
-        realtime_service = RealtimeDataService()
-        realtime_data = asyncio.run(realtime_service.update_realtime_data())
+        # Obtener datos en tiempo real
+        realtime_data = asyncio.run(self.get_realtime_data(pair))
         
-        if pair in realtime_data:
-            rt_data = realtime_data[pair]
-            
-            # Métricas en tiempo real
+        # Métricas en tiempo real
+        if realtime_data:
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
                 st.metric(
                     "Precio (Tiempo Real)",
-                    f"${rt_data['price']:,.2f}",
-                    f"{rt_data['change_24h']:.2f}%"
+                    f"${realtime_data['price']:,.2f}",
+                    f"{realtime_data['change_24h']:.2f}%"
                 )
                 
             with col2:
                 st.metric(
                     "Volumen 24h",
-                    f"${rt_data['volume_24h']:,.0f}",
-                    f"High: ${rt_data['high_24h']:,.2f}"
+                    f"${realtime_data['volume_24h']:,.0f}",
+                    f"High: ${realtime_data['high_24h']:,.2f}"
                 )
                 
             with col3:
-                market_cap = rt_data.get('market_cap', 0)
                 st.metric(
                     "Market Cap",
-                    f"${market_cap:,.0f}"
+                    f"${realtime_data['market_cap']:,.0f}"
                 )
                 
             with col4:
                 st.metric(
                     "Última Actualización",
-                    rt_data['last_update'].strftime('%H:%M:%S')
+                    realtime_data['last_update'].strftime('%H:%M:%S')
                 )
                 
-            # Agregar botón de actualización manual
-            if st.button(" Actualizar Datos"):
+            # Botón de actualización manual
+            if st.button(f"🔄 Actualizar {pair}"):
                 st.experimental_rerun()
-                
-        # Métricas principales
-        col1, col2, col3, col4 = st.columns(4)
         
-        current_price = data['Close'].iloc[-1]
-        prev_price = data['Close'].iloc[-2]
-        price_change = ((current_price - prev_price) / prev_price) * 100
-        rsi = data['RSI'].iloc[-1]
-        
-        with col1:
-            st.metric(
-                "Precio Actual",
-                f"${current_price:,.2f}",
-                f"{price_change:.2f}%"
-            )
-            
-        with col2:
-            st.metric(
-                "RSI",
-                f"{rsi:.2f}",
-                "Neutral" if 45 < rsi < 55 else "Sobrecompra" if rsi > 70 else "Sobreventa" if rsi < 30 else ""
-            )
-            
-        with col3:
-            trend = self._analyze_trend(data)
-            st.metric("Tendencia", trend)
-            
-        with col4:
-            volume_change = ((data['Volume'].iloc[-1] - data['Volume'].iloc[-2]) / data['Volume'].iloc[-2]) * 100
-            st.metric("Cambio Volumen 24h", f"{volume_change:.2f}%")
-        
-        # Gráficos
+        # Análisis técnico histórico
         col1, col2 = st.columns([2, 1])
         
         with col1:
@@ -134,7 +110,8 @@ class Dashboard:
                 st.write(f"SMA 50: ${latest['SMA_50']:.2f}")
                 st.write(f"SMA 200: ${latest['SMA_200']:.2f}")
                 st.write(f"RSI: {latest['RSI']:.2f}")
-                st.write(f"Volumen: {latest['Volume']:,.0f}")
+                if realtime_data:
+                    st.write(f"Supply: {realtime_data['supply']:,.0f}")
                 
         # Disclaimer
         st.warning("""
@@ -298,3 +275,9 @@ class Dashboard:
         )
         
         return fig
+        
+    async def __aenter__(self):
+        return self
+        
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.realtime_service.close()
