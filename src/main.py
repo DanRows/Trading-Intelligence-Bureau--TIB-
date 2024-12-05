@@ -64,13 +64,13 @@ def get_credentials():
 
 async def init_app():
     """Inicializa la aplicación"""
+    dashboard = None
     try:
         exchange, api_key, api_secret = get_credentials()
         if not exchange:
             st.warning("⚠️ Selecciona un exchange para comenzar")
             return
             
-        # Si no es Yahoo y faltan credenciales
         if exchange != 'yahoo' and not all([api_key, api_secret]):
             st.warning("⚠️ Configura tus credenciales para comenzar")
             return
@@ -80,17 +80,14 @@ async def init_app():
             st.error(f"❌ Exchange {exchange} no soportado")
             return
         
-        # Probar conexión
         with st.spinner(f'Verificando conexión con {exchange.title()}...'):
             if not connector.test_connection():
-                st.error(f"❌ No se pudo conectar con {exchange.title()}. Verifica la conexión.")
+                st.error(f"❌ No se pudo conectar con {exchange.title()}")
                 if exchange != 'yahoo':
-                    if f'{exchange.upper()}_API_KEY' in st.session_state:
-                        del st.session_state[f'{exchange.upper()}_API_KEY']
-                    if f'{exchange.upper()}_API_SECRET' in st.session_state:
-                        del st.session_state[f'{exchange.upper()}_API_SECRET']
+                    for key in [f'{exchange.upper()}_API_KEY', f'{exchange.upper()}_API_SECRET']:
+                        if key in st.session_state:
+                            del st.session_state[key]
                 return
-            
             st.sidebar.success(f"✅ Conectado a {exchange.title()}")
         
         analyzer = MarketAnalyzer()
@@ -100,27 +97,26 @@ async def init_app():
             if not market_data:
                 st.error("No se pudieron obtener datos del mercado")
                 return
-                
             analyses = analyzer.analyze_market(market_data)
         
-        # Crear y renderizar dashboard
-        dashboard = Dashboard(market_data, analyses)
-        try:
-            dashboard.render()
-        finally:
-            dashboard.cleanup()
+        # Inicializar y renderizar dashboard
+        dashboard = await Dashboard(market_data, analyses).initialize()
+        dashboard.render()
         
     except Exception as e:
         error_msg = f"Error en la aplicación: {str(e)}"
         logger.error(error_msg)
         st.error(error_msg)
+    finally:
+        if dashboard:
+            await dashboard.cleanup()
 
 def main():
     """Punto de entrada principal"""
     try:
         st.set_page_config(
             page_title="Trading Intelligence Bureau",
-            page_icon="",
+            page_icon="📊",
             layout="wide"
         )
         
@@ -132,10 +128,7 @@ def main():
             unsafe_allow_html=True
         )
         
-        # Ejecutar la aplicación asíncrona
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(init_app())
+        asyncio.run(init_app())
         
     except Exception as e:
         logger.error(f"Error fatal: {str(e)}")

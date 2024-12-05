@@ -10,27 +10,13 @@ class Dashboard:
     def __init__(self, market_data: Dict[str, Any], analyses: Dict[str, Any]):
         self.market_data = market_data
         self.analyses = analyses
-        self._init_realtime_service()
+        self.realtime_service = None
         
-    def _init_realtime_service(self):
-        """Inicializa el servicio de datos en tiempo real"""
-        try:
-            self.realtime_service = RealtimeService()
-        except Exception as e:
-            st.error(f"Error inicializando servicio de datos en tiempo real: {str(e)}")
-            self.realtime_service = None
-            
-    async def _get_realtime_data(self, pair: str) -> Dict[str, Any]:
-        """Obtiene datos en tiempo real de manera segura"""
-        if not self.realtime_service:
-            return {}
-            
-        try:
-            return await self.realtime_service.get_full_data(pair)
-        except Exception as e:
-            st.error(f"Error obteniendo datos en tiempo real: {str(e)}")
-            return {}
-            
+    async def initialize(self):
+        """Inicializa servicios de manera asíncrona"""
+        self.realtime_service = await RealtimeService().initialize()
+        return self
+        
     def render(self):
         """Renderiza el dashboard"""
         try:
@@ -40,19 +26,13 @@ class Dashboard:
                 page_icon="📊"
             )
         except:
-            # Ignorar error si ya está configurado
             pass
             
         # Estilo personalizado
         st.markdown("""
             <style>
-            .main {
-                background-color: #0e1117;
-            }
-            .stAlert {
-                background-color: #1c1c1c;
-                color: #ffffff;
-            }
+            .main { background-color: #0e1117; }
+            .stAlert { background-color: #1c1c1c; color: #ffffff; }
             </style>
             """, unsafe_allow_html=True)
             
@@ -67,15 +47,18 @@ class Dashboard:
         st.subheader(f"Análisis de {pair}")
         
         # Obtener datos en tiempo real
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            realtime_data = loop.run_until_complete(self._get_realtime_data(pair))
-            loop.close()
-        except Exception as e:
-            st.error(f"Error en el loop de eventos: {str(e)}")
-            realtime_data = {}
-            
+        realtime_data = {}
+        if self.realtime_service:
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                realtime_data = loop.run_until_complete(
+                    self.realtime_service.get_full_data(pair)
+                )
+                loop.close()
+            except Exception as e:
+                st.error(f"Error obteniendo datos en tiempo real: {str(e)}")
+        
         # Renderizar análisis
         self._render_technical_analysis(pair, data, realtime_data)
             
@@ -302,15 +285,8 @@ class Dashboard:
         
         return fig
         
-    def cleanup(self):
-        """Limpia los recursos de manera segura"""
-        if hasattr(self, 'realtime_service') and self.realtime_service:
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(self.realtime_service.close())
-                loop.close()
-            except Exception as e:
-                st.error(f"Error cerrando servicios: {str(e)}")
-            finally:
-                self.realtime_service = None
+    async def cleanup(self):
+        """Limpia recursos de manera asíncrona"""
+        if self.realtime_service:
+            await self.realtime_service.close()
+            self.realtime_service = None
