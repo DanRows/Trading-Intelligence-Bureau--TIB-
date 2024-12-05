@@ -103,8 +103,12 @@ async def init_app():
                 
             analyses = analyzer.analyze_market(market_data)
         
-        async with Dashboard(market_data, analyses) as dashboard:
+        # Crear y renderizar dashboard
+        dashboard = Dashboard(market_data, analyses)
+        try:
             dashboard.render()
+        finally:
+            dashboard.cleanup()
         
     except Exception as e:
         error_msg = f"Error en la aplicación: {str(e)}"

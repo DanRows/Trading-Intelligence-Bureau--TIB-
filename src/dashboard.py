@@ -12,23 +12,18 @@ class Dashboard:
         self.analyses = analyses
         self.realtime_service = RealtimeService()
         
-    async def get_realtime_data(self, symbol: str) -> Dict[str, Any]:
-        """Obtiene datos en tiempo real para un símbolo"""
-        try:
-            data = await self.realtime_service.get_full_data(symbol)
-            return data
-        except Exception as e:
-            st.error(f"Error obteniendo datos en tiempo real: {str(e)}")
-            return {}
-            
     def render(self):
         """Renderiza el dashboard"""
-        st.set_page_config(
-            page_title="🚀 Crypto Analyzer Pro",
-            layout="wide",
-            page_icon="📊"
-        )
-        
+        try:
+            st.set_page_config(
+                page_title="🚀 Crypto Analyzer Pro",
+                layout="wide",
+                page_icon="📊"
+            )
+        except:
+            # Ignorar error si ya está configurado
+            pass
+            
         # Estilo personalizado
         st.markdown("""
             <style>
@@ -52,44 +47,54 @@ class Dashboard:
         """Renderiza el análisis de un par"""
         st.subheader(f"Análisis de {pair}")
         
-        # Obtener datos en tiempo real
-        realtime_data = asyncio.run(self.get_realtime_data(pair))
-        
-        # Métricas en tiempo real
-        if realtime_data:
-            col1, col2, col3, col4 = st.columns(4)
+        try:
+            # Obtener datos en tiempo real
+            realtime_data = asyncio.run(self.realtime_service.get_full_data(pair))
             
-            with col1:
-                st.metric(
-                    "Precio (Tiempo Real)",
-                    f"${realtime_data['price']:,.2f}",
-                    f"{realtime_data['change_24h']:.2f}%"
-                )
+            # Métricas en tiempo real
+            if realtime_data:
+                col1, col2, col3, col4 = st.columns(4)
                 
-            with col2:
-                st.metric(
-                    "Volumen 24h",
-                    f"${realtime_data['volume_24h']:,.0f}",
-                    f"High: ${realtime_data['high_24h']:,.2f}"
-                )
-                
-            with col3:
-                st.metric(
-                    "Market Cap",
-                    f"${realtime_data['market_cap']:,.0f}"
-                )
-                
-            with col4:
-                st.metric(
-                    "Última Actualización",
-                    realtime_data['last_update'].strftime('%H:%M:%S')
-                )
-                
-            # Botón de actualización manual
-            if st.button(f"🔄 Actualizar {pair}"):
-                st.experimental_rerun()
-        
-        # Análisis técnico histórico
+                with col1:
+                    st.metric(
+                        "Precio (Tiempo Real)",
+                        f"${realtime_data['price']:,.2f}",
+                        f"{realtime_data['change_24h']:.2f}%"
+                    )
+                    
+                with col2:
+                    st.metric(
+                        "Volumen 24h",
+                        f"${realtime_data['volume_24h']:,.0f}",
+                        f"High: ${realtime_data['high_24h']:,.2f}"
+                    )
+                    
+                with col3:
+                    st.metric(
+                        "Market Cap",
+                        f"${realtime_data['market_cap']:,.0f}"
+                    )
+                    
+                with col4:
+                    st.metric(
+                        "Última Actualización",
+                        realtime_data['last_update'].strftime('%H:%M:%S')
+                    )
+                    
+                # Botón de actualización manual
+                if st.button(f"🔄 Actualizar {pair}"):
+                    st.experimental_rerun()
+                    
+            # Análisis técnico histórico
+            self._render_technical_analysis(pair, data, realtime_data)
+            
+        except Exception as e:
+            st.error(f"Error obteniendo datos en tiempo real: {str(e)}")
+            # Continuar con el análisis técnico sin datos en tiempo real
+            self._render_technical_analysis(pair, data, {})
+            
+    def _render_technical_analysis(self, pair: str, data: pd.DataFrame, realtime_data: Dict[str, Any]):
+        """Renderiza el análisis técnico"""
         col1, col2 = st.columns([2, 1])
         
         with col1:
@@ -112,14 +117,14 @@ class Dashboard:
                 st.write(f"RSI: {latest['RSI']:.2f}")
                 if realtime_data:
                     st.write(f"Supply: {realtime_data['supply']:,.0f}")
-                
+                    
         # Disclaimer
         st.warning("""
         ⚠️ DISCLAIMER: Este es un análisis automático con fines educativos.
         No constituye consejo financiero. El mercado crypto es altamente volátil y riesgoso.
         Siempre realiza tu propia investigación antes de tomar decisiones de inversión.
         """)
-        
+            
     def _analyze_trend(self, df: pd.DataFrame) -> str:
         """Analiza la tendencia usando SMAs"""
         current_price = df['Close'].iloc[-1]
@@ -276,8 +281,10 @@ class Dashboard:
         
         return fig
         
-    async def __aenter__(self):
-        return self
-        
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.realtime_service.close()
+    def cleanup(self):
+        """Limpia los recursos"""
+        try:
+            if hasattr(self, 'realtime_service'):
+                asyncio.run(self.realtime_service.close())
+        except Exception as e:
+            st.error(f"Error cerrando servicios: {str(e)}")
