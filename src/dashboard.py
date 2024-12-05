@@ -4,6 +4,7 @@ from datetime import datetime
 import asyncio
 from typing import Dict, Any, List
 import pandas as pd
+from data.realtime_data import RealtimeDataService
 
 class Dashboard:
     def __init__(self, market_data: Dict[str, Any], analyses: Dict[str, Any]):
@@ -41,6 +42,47 @@ class Dashboard:
         """Renderiza el análisis de un par"""
         st.subheader(f"Análisis de {pair}")
         
+        # Datos en tiempo real
+        realtime_service = RealtimeDataService()
+        realtime_data = asyncio.run(realtime_service.update_realtime_data())
+        
+        if pair in realtime_data:
+            rt_data = realtime_data[pair]
+            
+            # Métricas en tiempo real
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric(
+                    "Precio (Tiempo Real)",
+                    f"${rt_data['price']:,.2f}",
+                    f"{rt_data['change_24h']:.2f}%"
+                )
+                
+            with col2:
+                st.metric(
+                    "Volumen 24h",
+                    f"${rt_data['volume_24h']:,.0f}",
+                    f"High: ${rt_data['high_24h']:,.2f}"
+                )
+                
+            with col3:
+                market_cap = rt_data.get('market_cap', 0)
+                st.metric(
+                    "Market Cap",
+                    f"${market_cap:,.0f}"
+                )
+                
+            with col4:
+                st.metric(
+                    "Última Actualización",
+                    rt_data['last_update'].strftime('%H:%M:%S')
+                )
+                
+            # Agregar botón de actualización manual
+            if st.button(" Actualizar Datos"):
+                st.experimental_rerun()
+                
         # Métricas principales
         col1, col2, col3, col4 = st.columns(4)
         

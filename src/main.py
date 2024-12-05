@@ -24,19 +24,18 @@ def get_credentials():
     # Seleccionar exchange
     exchange = st.sidebar.selectbox(
         "Exchange",
-        ["Yahoo", "Bybit", "Binance"],  # Yahoo primero ya que no requiere API keys
+        ["Yahoo", "Bybit", "Binance"],
         help="Selecciona el exchange que deseas usar"
     )
     
     # Si es Yahoo, no necesitamos credenciales
     if exchange.lower() == 'yahoo':
-        return exchange.lower(), "", ""
+        return exchange.lower(), None, None
     
-    # Intentar obtener credenciales de la sesión
+    # Para otros exchanges, necesitamos credenciales
     api_key = st.session_state.get(f'{exchange.upper()}_API_KEY', '')
     api_secret = st.session_state.get(f'{exchange.upper()}_API_SECRET', '')
     
-    # Si no hay credenciales en la sesión, mostrar formulario
     if not api_key or not api_secret:
         st.sidebar.header(" Configuración API")
         
@@ -67,7 +66,12 @@ async def init_app():
     """Inicializa la aplicación"""
     try:
         exchange, api_key, api_secret = get_credentials()
-        if not all([exchange, api_key, api_secret]):
+        if not exchange:
+            st.warning("⚠️ Selecciona un exchange para comenzar")
+            return
+            
+        # Si no es Yahoo y faltan credenciales
+        if exchange != 'yahoo' and not all([api_key, api_secret]):
             st.warning("⚠️ Configura tus credenciales para comenzar")
             return
         
@@ -75,22 +79,20 @@ async def init_app():
         if not connector:
             st.error(f"❌ Exchange {exchange} no soportado")
             return
-            
-        # Debug
-        st.write("Métodos disponibles:", dir(connector))
         
         # Probar conexión
-        with st.spinner('Verificando conexión con Bybit...'):
+        with st.spinner(f'Verificando conexión con {exchange.title()}...'):
             if not connector.test_connection():
-                st.error("❌ No se pudo conectar con Bybit. Verifica tus credenciales.")
-                # Limpiar credenciales inválidas
-                if 'BYBIT_API_KEY' in st.session_state:
-                    del st.session_state['BYBIT_API_KEY']
-                if 'BYBIT_API_SECRET' in st.session_state:
-                    del st.session_state['BYBIT_API_SECRET']
+                st.error(f"❌ No se pudo conectar con {exchange.title()}. Verifica la conexión.")
+                # Limpiar credenciales inválidas si no es Yahoo
+                if exchange != 'yahoo':
+                    if f'{exchange.upper()}_API_KEY' in st.session_state:
+                        del st.session_state[f'{exchange.upper()}_API_KEY']
+                    if f'{exchange.upper()}_API_SECRET' in st.session_state:
+                        del st.session_state[f'{exchange.upper()}_API_SECRET']
                 return
             
-            st.sidebar.success("✅ Conectado a Bybit!")
+            st.sidebar.success(f"✅ Conectado a {exchange.title()}")
         
         analyzer = MarketAnalyzer()
         
@@ -117,6 +119,14 @@ def main():
             page_title="Trading Intelligence Bureau",
             page_icon="",
             layout="wide"
+        )
+        
+        # Auto-refresh cada 60 segundos
+        st.markdown(
+            """
+            <meta http-equiv="refresh" content="60">
+            """,
+            unsafe_allow_html=True
         )
         
         # Ejecutar la aplicación asíncrona
