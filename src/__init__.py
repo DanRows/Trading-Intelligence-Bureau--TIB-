@@ -1,1 +1,1 @@
- 
+"""Trading Intelligence Bureau package.""" 
