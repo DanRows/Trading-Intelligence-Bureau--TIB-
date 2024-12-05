@@ -19,54 +19,23 @@ class RealtimeService:
             "ADAUSDT": "ADA"
         }
         self.realtime_data = {}
-        self.timeout = ClientTimeout(total=10)
         self.session = None
         
-    async def _get_session(self) -> ClientSession:
-        """Obtiene o crea una sesión de aiohttp"""
-        if self.session is None or self.session.closed:
-            self.session = ClientSession(timeout=self.timeout)
-        return self.session
+    async def initialize(self):
+        """Inicializa el servicio de manera asíncrona"""
+        if not self.session:
+            self.session = ClientSession(
+                timeout=ClientTimeout(total=10),
+                raise_for_status=True
+            )
+        return self
         
-    async def get_current_price(self, symbol: str) -> Dict[str, Any]:
-        """Obtiene el precio actual de un símbolo"""
-        try:
-            crypto_symbol = self.symbols.get(symbol)
-            if not crypto_symbol:
-                logger.warning(f"Símbolo no soportado: {symbol}")
-                return {}
-                
-            url = f"{self.base_url}/price"
-            params = {
-                "fsym": crypto_symbol,
-                "tsyms": "USD",
-                "e": "Binance"
-            }
-            
-            session = await self._get_session()
-            async with session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if 'USD' in data:
-                        return {
-                            'price': data['USD'],
-                            'timestamp': datetime.now(),
-                            'symbol': symbol
-                        }
-                else:
-                    logger.error(f"Error en la API: {response.status} - {await response.text()}")
-            return {}
-            
-        except asyncio.TimeoutError:
-            logger.error(f"Timeout obteniendo precio para {symbol}")
-            return {}
-        except Exception as e:
-            logger.error(f"Error getting price for {symbol}: {str(e)}")
-            return {}
-            
     async def get_full_data(self, symbol: str) -> Dict[str, Any]:
         """Obtiene datos completos de un símbolo"""
         try:
+            if not self.session:
+                await self.initialize()
+                
             crypto_symbol = self.symbols.get(symbol)
             if not crypto_symbol:
                 logger.warning(f"Símbolo no soportado: {symbol}")
@@ -75,77 +44,38 @@ class RealtimeService:
             url = f"{self.base_url}/pricemultifull"
             params = {
                 "fsyms": crypto_symbol,
-                "tsyms": "USD",
-                "e": "Binance"
+                "tsyms": "USD"
             }
             
-            session = await self._get_session()
-            async with session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if 'RAW' in data and crypto_symbol in data['RAW']:
-                        raw_data = data['RAW'][crypto_symbol]['USD']
-                        return {
-                            'symbol': symbol,
-                            'price': raw_data.get('PRICE', 0),
-                            'volume_24h': raw_data.get('VOLUME24HOUR', 0),
-                            'high_24h': raw_data.get('HIGH24HOUR', 0),
-                            'low_24h': raw_data.get('LOW24HOUR', 0),
-                            'change_24h': raw_data.get('CHANGEPCT24HOUR', 0),
-                            'market_cap': raw_data.get('MKTCAP', 0),
-                            'last_update': datetime.fromtimestamp(raw_data.get('LASTUPDATE', 0)),
-                            'supply': raw_data.get('SUPPLY', 0)
-                        }
-                else:
-                    logger.error(f"Error en la API: {response.status} - {await response.text()}")
-            return {}
-            
-        except asyncio.TimeoutError:
-            logger.error(f"Timeout obteniendo datos para {symbol}")
-            return {}
-        except Exception as e:
-            logger.error(f"Error getting full data for {symbol}: {str(e)}")
-            return {}
-            
-    async def update_all_symbols(self) -> Dict[str, Dict[str, Any]]:
-        """Actualiza los datos de todos los símbolos"""
-        try:
-            tasks = []
-            for symbol in self.symbols:
-                tasks.append(self.get_full_data(symbol))
+            async with self.session.get(url, params=params) as response:
+                data = await response.json()
                 
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            for symbol, data in zip(self.symbols, results):
-                if isinstance(data, Exception):
-                    logger.error(f"Error updating {symbol}: {str(data)}")
-                    continue
-                if data:
-                    self.realtime_data[symbol] = data
+                if 'RAW' in data and crypto_symbol in data['RAW']:
+                    raw_data = data['RAW'][crypto_symbol]['USD']
+                    return {
+                        'symbol': symbol,
+                        'price': raw_data.get('PRICE', 0),
+                        'volume_24h': raw_data.get('VOLUME24HOUR', 0),
+                        'high_24h': raw_data.get('HIGH24HOUR', 0),
+                        'low_24h': raw_data.get('LOW24HOUR', 0),
+                        'change_24h': raw_data.get('CHANGEPCT24HOUR', 0),
+                        'market_cap': raw_data.get('MKTCAP', 0),
+                        'last_update': datetime.fromtimestamp(raw_data.get('LASTUPDATE', 0)),
+                        'supply': raw_data.get('SUPPLY', 0)
+                    }
                     
-            return self.realtime_data
-            
+                return {}
+                
         except Exception as e:
-            logger.error(f"Error updating all symbols: {str(e)}")
+            logger.error(f"Error getting data for {symbol}: {str(e)}")
             return {}
             
     async def close(self):
-        """Cierra la sesión de aiohttp"""
+        """Cierra la sesión HTTP de manera segura"""
         if self.session and not self.session.closed:
-            await self.session.close()
-            
-    def get_available_symbols(self) -> List[str]:
-        """Retorna la lista de símbolos disponibles"""
-        return list(self.symbols.keys())
-        
-    def get_last_data(self, symbol: str) -> Dict[str, Any]:
-        """Retorna los últimos datos almacenados para un símbolo"""
-        return self.realtime_data.get(symbol, {})
-        
-    async def __aenter__(self):
-        """Soporte para context manager async"""
-        return self
-        
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Cleanup al salir del context manager"""
-        await self.close()
+            try:
+                await self.session.close()
+            except Exception as e:
+                logger.error(f"Error closing session: {str(e)}")
+            finally:
+                self.session = None

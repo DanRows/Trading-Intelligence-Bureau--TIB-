@@ -109,7 +109,10 @@ async def init_app():
         st.error(error_msg)
     finally:
         if dashboard:
-            await dashboard.cleanup()
+            try:
+                await dashboard.cleanup()
+            except Exception as e:
+                logger.error(f"Error cleaning up dashboard: {str(e)}")
 
 def main():
     """Punto de entrada principal"""

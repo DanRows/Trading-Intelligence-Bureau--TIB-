@@ -5,6 +5,9 @@ import asyncio
 from typing import Dict, Any, List
 import pandas as pd
 from data.realtime_service import RealtimeService
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Dashboard:
     def __init__(self, market_data: Dict[str, Any], analyses: Dict[str, Any]):
@@ -14,7 +17,11 @@ class Dashboard:
         
     async def initialize(self):
         """Inicializa servicios de manera asíncrona"""
-        self.realtime_service = await RealtimeService().initialize()
+        try:
+            self.realtime_service = await RealtimeService().initialize()
+        except Exception as e:
+            logger.error(f"Error initializing realtime service: {str(e)}")
+            self.realtime_service = None
         return self
         
     def render(self):
@@ -57,7 +64,7 @@ class Dashboard:
                 )
                 loop.close()
             except Exception as e:
-                st.error(f"Error obteniendo datos en tiempo real: {str(e)}")
+                logger.error(f"Error getting realtime data: {str(e)}")
         
         # Renderizar análisis
         self._render_technical_analysis(pair, data, realtime_data)
@@ -288,5 +295,9 @@ class Dashboard:
     async def cleanup(self):
         """Limpia recursos de manera asíncrona"""
         if self.realtime_service:
-            await self.realtime_service.close()
-            self.realtime_service = None
+            try:
+                await self.realtime_service.close()
+            except Exception as e:
+                logger.error(f"Error cleaning up realtime service: {str(e)}")
+            finally:
+                self.realtime_service = None
