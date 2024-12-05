@@ -162,4 +162,65 @@ class TechnicalIndicators:
         right_prices = prices[mid_point + 1:]
         
         return all(price > mid_price * (1 - threshold) for price in left_prices) and \
-               all(price > mid_price * (1 - threshold) for price in right_prices) 
+               all(price > mid_price * (1 - threshold) for price in right_prices)
+    
+    @staticmethod
+    def calculate_ema(data: pd.Series, period: int) -> pd.Series:
+        """Calcula EMA (Exponential Moving Average)"""
+        return data.ewm(span=period, adjust=False).mean()
+    
+    @staticmethod
+    def calculate_macd(
+        data: pd.Series,
+        fast_period: int = 12,
+        slow_period: int = 26,
+        signal_period: int = 9
+    ) -> Dict[str, pd.Series]:
+        """Calcula MACD (Moving Average Convergence Divergence)"""
+        fast_ema = TechnicalIndicators.calculate_ema(data, fast_period)
+        slow_ema = TechnicalIndicators.calculate_ema(data, slow_period)
+        macd_line = fast_ema - slow_ema
+        signal_line = TechnicalIndicators.calculate_ema(macd_line, signal_period)
+        histogram = macd_line - signal_line
+        
+        return {
+            'macd': macd_line,
+            'signal': signal_line,
+            'histogram': histogram
+        }
+    
+    @staticmethod
+    def calculate_bollinger_bands(
+        data: pd.Series,
+        period: int = 20,
+        std_dev: float = 2.0
+    ) -> Dict[str, pd.Series]:
+        """Calcula Bandas de Bollinger"""
+        middle_band = data.rolling(window=period).mean()
+        std = data.rolling(window=period).std()
+        
+        upper_band = middle_band + (std * std_dev)
+        lower_band = middle_band - (std * std_dev)
+        
+        return {
+            'upper': upper_band,
+            'middle': middle_band,
+            'lower': lower_band
+        }
+    
+    @staticmethod
+    def calculate_stochastic(
+        high: pd.Series,
+        low: pd.Series,
+        close: pd.Series,
+        k_period: int = 14,
+        d_period: int = 3
+    ) -> Tuple[pd.Series, pd.Series]:
+        """Calcula Oscilador Estocástico"""
+        lowest_low = low.rolling(window=k_period).min()
+        highest_high = high.rolling(window=k_period).max()
+        
+        k_line = 100 * ((close - lowest_low) / (highest_high - lowest_low))
+        d_line = k_line.rolling(window=d_period).mean()
+        
+        return k_line, d_line 
