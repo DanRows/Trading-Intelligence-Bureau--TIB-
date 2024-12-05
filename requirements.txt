@@ -7,4 +7,7 @@ python-dotenv==1.0.1
 aiohttp==3.9.3
 yfinance==0.2.36
 ta==0.11.0
-ccxt==4.1.87 
+ccxt==4.1.87
+websocket-client==1.7.0
+finnhub-python==2.4.19
+websockets==12.0 
