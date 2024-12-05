@@ -3,7 +3,7 @@ import os
 import logging
 from dotenv import load_dotenv
 import streamlit as st
-from data.bybit_connector import BybitConnector
+from data.exchange_factory import ExchangeFactory
 from analyzer import MarketAnalyzer
 from dashboard import Dashboard
 
@@ -20,10 +20,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def get_credentials():
-    """Obtiene las credenciales de Bybit"""
+    """Obtiene las credenciales del exchange"""
+    # Seleccionar exchange
+    exchange = st.sidebar.selectbox(
+        "Exchange",
+        ["Bybit", "Binance"],
+        help="Selecciona el exchange que deseas usar"
+    )
+    
     # Intentar obtener credenciales de la sesión
-    api_key = st.session_state.get('BYBIT_API_KEY', '')
-    api_secret = st.session_state.get('BYBIT_API_SECRET', '')
+    api_key = st.session_state.get(f'{exchange.upper()}_API_KEY', '')
+    api_secret = st.session_state.get(f'{exchange.upper()}_API_SECRET', '')
     
     # Si no hay credenciales en la sesión, mostrar formulario
     if not api_key or not api_secret:
@@ -32,36 +39,39 @@ def get_credentials():
         api_key = st.sidebar.text_input(
             "API Key",
             type="password",
-            help="Ingresa tu API Key de Bybit"
+            help=f"Ingresa tu API Key de {exchange}"
         )
         
         api_secret = st.sidebar.text_input(
             "API Secret",
             type="password",
-            help="Ingresa tu API Secret de Bybit"
+            help=f"Ingresa tu API Secret de {exchange}"
         )
         
         if st.sidebar.button("Guardar Credenciales"):
             if api_key and api_secret:
-                st.session_state['BYBIT_API_KEY'] = api_key
-                st.session_state['BYBIT_API_SECRET'] = api_secret
+                st.session_state[f'{exchange.upper()}_API_KEY'] = api_key
+                st.session_state[f'{exchange.upper()}_API_SECRET'] = api_secret
                 st.sidebar.success("✅ Credenciales guardadas!")
             else:
                 st.sidebar.error("❌ Ambos campos son requeridos")
-                return None, None
+                return None, None, None
     
-    return api_key, api_secret
+    return exchange.lower(), api_key, api_secret
 
 async def init_app():
     """Inicializa la aplicación"""
     try:
-        api_key, api_secret = get_credentials()
-        if not api_key or not api_secret:
-            st.warning("⚠️ Configura tus credenciales de Bybit para comenzar")
+        exchange, api_key, api_secret = get_credentials()
+        if not all([exchange, api_key, api_secret]):
+            st.warning("⚠️ Configura tus credenciales para comenzar")
             return
         
-        connector = BybitConnector(api_key, api_secret)
-        
+        connector = ExchangeFactory.create_connector(exchange, api_key, api_secret)
+        if not connector:
+            st.error(f"❌ Exchange {exchange} no soportado")
+            return
+            
         # Debug
         st.write("Métodos disponibles:", dir(connector))
         

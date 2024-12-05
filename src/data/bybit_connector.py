@@ -3,42 +3,84 @@ import pandas as pd
 from typing import Dict
 import logging
 import time
+from datetime import datetime, timedelta
+from .base_connector import BaseExchangeConnector
 
 logger = logging.getLogger(__name__)
 
-class BybitConnector:
-    def __init__(self, api_key: str, api_secret: str):
+class BybitConnector(BaseExchangeConnector):
+    def __init__(self, api_key: str, api_secret: str, testnet: bool = False):
+        super().__init__(api_key, api_secret, testnet)
         self.session = HTTP(
-            testnet=False,
+            testnet=testnet,
             api_key=api_key,
             api_secret=api_secret
         )
-        self.trading_pairs = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
-        self.last_request_time = 0
-        self.min_request_interval = 0.5  # 500ms entre solicitudes
+        self.last_request_time = {}
+        self.min_request_interval = 2.0
+        self.max_retries = 3
         
-    def _rate_limit(self):
-        """Implementa rate limiting básico"""
+    def _rate_limit(self, endpoint: str):
+        """
+        Implementa rate limiting por endpoint
+        
+        Args:
+            endpoint: Identificador del endpoint
+        """
         current_time = time.time()
-        elapsed = current_time - self.last_request_time
+        last_time = self.last_request_time.get(endpoint, 0)
+        elapsed = current_time - last_time
+        
         if elapsed < self.min_request_interval:
-            time.sleep(self.min_request_interval - elapsed)
-        self.last_request_time = time.time()
+            sleep_time = self.min_request_interval - elapsed
+            logger.debug(f"Rate limiting: sleeping {sleep_time:.2f}s for {endpoint}")
+            time.sleep(sleep_time)
+            
+        self.last_request_time[endpoint] = time.time()
+
+    def _make_request(self, endpoint: str, func, *args, **kwargs) -> Dict:
+        """
+        Hace una solicitud con reintentos y rate limiting
+        
+        Args:
+            endpoint: Identificador del endpoint
+            func: Función a ejecutar
+            args: Argumentos posicionales
+            kwargs: Argumentos nombrados
+        """
+        for attempt in range(self.max_retries):
+            try:
+                self._rate_limit(endpoint)
+                response = func(*args, **kwargs)
+                
+                if response.get('retCode') == 0:
+                    return response
+                elif 'rate limit' in str(response.get('retMsg', '')).lower():
+                    wait_time = (attempt + 1) * self.min_request_interval
+                    logger.warning(f"Rate limit hit, waiting {wait_time}s before retry")
+                    time.sleep(wait_time)
+                else:
+                    raise Exception(response.get('retMsg', 'Unknown error'))
+                    
+            except Exception as e:
+                if attempt == self.max_retries - 1:
+                    raise
+                logger.warning(f"Request failed (attempt {attempt + 1}/{self.max_retries}): {str(e)}")
+                time.sleep(self.min_request_interval)
+                
+        raise Exception(f"Failed after {self.max_retries} attempts")
 
     def test_connection(self) -> bool:
         """Prueba la conexión con Bybit"""
         try:
-            self._rate_limit()
-            response = self.session.get_tickers(
+            response = self._make_request(
+                'test_connection',
+                self.session.get_tickers,
                 category="spot",
                 symbol="BTCUSDT"
             )
-            is_connected = response.get('retCode') == 0
-            if is_connected:
-                logger.info("Conexión exitosa con Bybit")
-            else:
-                logger.error(f"Error de conexión: {response.get('retMsg')}")
-            return is_connected
+            logger.info("Conexión exitosa con Bybit")
+            return True
         except Exception as e:
             logger.error(f"Error testing connection: {str(e)}")
             return False
@@ -46,19 +88,15 @@ class BybitConnector:
     async def get_kline_data(self, symbol: str, interval: str = "15") -> pd.DataFrame:
         """Obtiene datos de velas para un par"""
         try:
-            self._rate_limit()
-            response = self.session.get_kline(
+            response = self._make_request(
+                f'kline_{symbol}',
+                self.session.get_kline,
                 category="spot",
                 symbol=symbol,
                 interval=interval,
                 limit=100
             )
             
-            if response.get('retCode') != 0:
-                error_msg = f"Error from Bybit API: {response.get('retMsg')}"
-                logger.error(error_msg)
-                raise Exception(error_msg)
-                
             df = pd.DataFrame(response['result']['list'])
             if df.empty:
                 logger.warning(f"No data received for {symbol}")
@@ -81,7 +119,6 @@ class BybitConnector:
         
         for pair in self.trading_pairs:
             try:
-                self._rate_limit()
                 market_data[pair] = await self.get_kline_data(pair)
             except Exception as e:
                 logger.error(f"Error getting market data for {pair}: {str(e)}")
