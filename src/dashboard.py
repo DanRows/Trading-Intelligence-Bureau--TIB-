@@ -10,8 +10,27 @@ class Dashboard:
     def __init__(self, market_data: Dict[str, Any], analyses: Dict[str, Any]):
         self.market_data = market_data
         self.analyses = analyses
-        self.realtime_service = RealtimeService()
+        self._init_realtime_service()
         
+    def _init_realtime_service(self):
+        """Inicializa el servicio de datos en tiempo real"""
+        try:
+            self.realtime_service = RealtimeService()
+        except Exception as e:
+            st.error(f"Error inicializando servicio de datos en tiempo real: {str(e)}")
+            self.realtime_service = None
+            
+    async def _get_realtime_data(self, pair: str) -> Dict[str, Any]:
+        """Obtiene datos en tiempo real de manera segura"""
+        if not self.realtime_service:
+            return {}
+            
+        try:
+            return await self.realtime_service.get_full_data(pair)
+        except Exception as e:
+            st.error(f"Error obteniendo datos en tiempo real: {str(e)}")
+            return {}
+            
     def render(self):
         """Renderiza el dashboard"""
         try:
@@ -47,54 +66,56 @@ class Dashboard:
         """Renderiza el análisis de un par"""
         st.subheader(f"Análisis de {pair}")
         
+        # Obtener datos en tiempo real
         try:
-            # Obtener datos en tiempo real
-            realtime_data = asyncio.run(self.realtime_service.get_full_data(pair))
-            
-            # Métricas en tiempo real
-            if realtime_data:
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    st.metric(
-                        "Precio (Tiempo Real)",
-                        f"${realtime_data['price']:,.2f}",
-                        f"{realtime_data['change_24h']:.2f}%"
-                    )
-                    
-                with col2:
-                    st.metric(
-                        "Volumen 24h",
-                        f"${realtime_data['volume_24h']:,.0f}",
-                        f"High: ${realtime_data['high_24h']:,.2f}"
-                    )
-                    
-                with col3:
-                    st.metric(
-                        "Market Cap",
-                        f"${realtime_data['market_cap']:,.0f}"
-                    )
-                    
-                with col4:
-                    st.metric(
-                        "Última Actualización",
-                        realtime_data['last_update'].strftime('%H:%M:%S')
-                    )
-                    
-                # Botón de actualización manual
-                if st.button(f"🔄 Actualizar {pair}"):
-                    st.experimental_rerun()
-                    
-            # Análisis técnico histórico
-            self._render_technical_analysis(pair, data, realtime_data)
-            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            realtime_data = loop.run_until_complete(self._get_realtime_data(pair))
+            loop.close()
         except Exception as e:
-            st.error(f"Error obteniendo datos en tiempo real: {str(e)}")
-            # Continuar con el análisis técnico sin datos en tiempo real
-            self._render_technical_analysis(pair, data, {})
+            st.error(f"Error en el loop de eventos: {str(e)}")
+            realtime_data = {}
+            
+        # Renderizar análisis
+        self._render_technical_analysis(pair, data, realtime_data)
             
     def _render_technical_analysis(self, pair: str, data: pd.DataFrame, realtime_data: Dict[str, Any]):
         """Renderiza el análisis técnico"""
+        # Métricas en tiempo real
+        if realtime_data:
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric(
+                    "Precio (Tiempo Real)",
+                    f"${realtime_data['price']:,.2f}",
+                    f"{realtime_data['change_24h']:.2f}%"
+                )
+                
+            with col2:
+                st.metric(
+                    "Volumen 24h",
+                    f"${realtime_data['volume_24h']:,.0f}",
+                    f"High: ${realtime_data['high_24h']:,.2f}"
+                )
+                
+            with col3:
+                st.metric(
+                    "Market Cap",
+                    f"${realtime_data['market_cap']:,.0f}"
+                )
+                
+            with col4:
+                st.metric(
+                    "Última Actualización",
+                    realtime_data['last_update'].strftime('%H:%M:%S')
+                )
+                
+            # Botón de actualización manual
+            if st.button(f"🔄 Actualizar {pair}"):
+                st.experimental_rerun()
+        
+        # Análisis técnico histórico
         col1, col2 = st.columns([2, 1])
         
         with col1:
@@ -282,9 +303,14 @@ class Dashboard:
         return fig
         
     def cleanup(self):
-        """Limpia los recursos"""
-        try:
-            if hasattr(self, 'realtime_service'):
-                asyncio.run(self.realtime_service.close())
-        except Exception as e:
-            st.error(f"Error cerrando servicios: {str(e)}")
+        """Limpia los recursos de manera segura"""
+        if hasattr(self, 'realtime_service') and self.realtime_service:
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(self.realtime_service.close())
+                loop.close()
+            except Exception as e:
+                st.error(f"Error cerrando servicios: {str(e)}")
+            finally:
+                self.realtime_service = None
