@@ -35,17 +35,13 @@ class BinanceConnector(BaseExchangeConnector):
     async def get_kline_data(self, symbol: str, interval: str = "1d") -> pd.DataFrame:
         """Obtiene datos de velas para un par"""
         try:
-            # Convertir el símbolo al formato de CCXT
             ccxt_symbol = symbol.replace('USDT', '/USDT')
-            
-            # Obtener datos
             ohlcv = self.exchange.fetch_ohlcv(
                 ccxt_symbol,
                 interval,
-                limit=365  # 1 año de datos
+                limit=365
             )
             
-            # Convertir a DataFrame
             df = pd.DataFrame(
                 ohlcv,
                 columns=['timestamp', 'Open', 'High', 'Low', 'Close', 'Volume']
@@ -53,9 +49,8 @@ class BinanceConnector(BaseExchangeConnector):
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)
             
-            # Calcular indicadores técnicos
+            # Indicadores técnicos
             df['RSI'] = ta.momentum.RSIIndicator(df['Close']).rsi()
-            
             macd = ta.trend.MACD(df['Close'])
             df['MACD'] = macd.macd()
             df['MACD_signal'] = macd.macd_signal()
@@ -65,7 +60,6 @@ class BinanceConnector(BaseExchangeConnector):
             df['BB_low'] = bollinger.bollinger_lband()
             df['BB_mid'] = bollinger.bollinger_mavg()
             
-            # Promedios Móviles
             df['SMA_20'] = ta.trend.sma_indicator(df['Close'], window=20)
             df['SMA_50'] = ta.trend.sma_indicator(df['Close'], window=50)
             df['SMA_200'] = ta.trend.sma_indicator(df['Close'], window=200)
