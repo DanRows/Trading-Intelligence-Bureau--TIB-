@@ -64,7 +64,7 @@ async def init_app():
         
         # Probar conexión
         with st.spinner('Verificando conexión con Bybit...'):
-            if not await connector.test_connection():
+            if not connector.test_connection():
                 st.error("❌ No se pudo conectar con Bybit. Verifica tus credenciales.")
                 # Limpiar credenciales inválidas
                 if 'BYBIT_API_KEY' in st.session_state:
@@ -98,7 +98,7 @@ def main():
     try:
         st.set_page_config(
             page_title="Trading Intelligence Bureau",
-            page_icon="📊",
+            page_icon="����",
             layout="wide"
         )
         

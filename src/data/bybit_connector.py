@@ -2,7 +2,6 @@ from pybit.unified_trading import HTTP
 import pandas as pd
 from typing import Dict, Optional, List
 import logging
-import asyncio
 from datetime import datetime
 
 class BybitConnector:
@@ -14,46 +13,36 @@ class BybitConnector:
         )
         self.trading_pairs = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
         self.logger = logging.getLogger(__name__)
-        self.rate_limit_delay = 0.1  # 100ms entre llamadas
-        
-    async def test_connection(self) -> bool:
+
+    def test_connection(self) -> bool:
         """Prueba la conexión con Bybit"""
         try:
-            await asyncio.sleep(self.rate_limit_delay)
             response = self.session.get_tickers(
                 category="spot",
                 symbol="BTCUSDT"
             )
-            return response['retCode'] == 0
+            is_connected = response.get('retCode') == 0
+            if is_connected:
+                self.logger.info("Conexión exitosa con Bybit")
+            else:
+                self.logger.error(f"Error de conexión: {response.get('retMsg')}")
+            return is_connected
         except Exception as e:
             self.logger.error(f"Error testing connection: {str(e)}")
             return False
 
-    async def get_kline_data(
-        self, 
-        symbol: str, 
-        interval: str = "15",
-        limit: int = 100
-    ) -> pd.DataFrame:
-        """
-        Obtiene datos de velas para un par específico
-        
-        Args:
-            symbol: Par de trading (ej: 'BTCUSDT')
-            interval: Intervalo de tiempo ('1', '5', '15', '30', '60', '240', 'D')
-            limit: Número de velas a obtener
-        """
+    async def get_kline_data(self, symbol: str, interval: str = "15") -> pd.DataFrame:
+        """Obtiene datos de velas para un par"""
         try:
-            await asyncio.sleep(self.rate_limit_delay)  # Rate limiting
             response = self.session.get_kline(
                 category="spot",
                 symbol=symbol,
                 interval=interval,
-                limit=limit
+                limit=100
             )
             
-            if response['retCode'] != 0:
-                error_msg = f"Error from Bybit API: {response['retMsg']}"
+            if response.get('retCode') != 0:
+                error_msg = f"Error from Bybit API: {response.get('retMsg')}"
                 self.logger.error(error_msg)
                 raise Exception(error_msg)
                 
@@ -73,7 +62,7 @@ class BybitConnector:
             raise
 
     async def get_market_data(self) -> Dict[str, pd.DataFrame]:
-        """Obtiene datos de todos los pares configurados"""
+        """Obtiene datos de todos los pares"""
         market_data = {}
         errors = []
         
