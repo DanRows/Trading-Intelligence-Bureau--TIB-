@@ -10,4 +10,5 @@ ta==0.11.0
 ccxt==4.1.87
 websocket-client==1.7.0
 finnhub-python==2.4.19
-websockets==12.0 
+websockets==12.0
+backoff==2.2.1 
