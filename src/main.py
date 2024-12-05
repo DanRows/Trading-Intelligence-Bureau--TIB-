@@ -3,7 +3,7 @@ import os
 import logging
 from dotenv import load_dotenv
 import streamlit as st
-from connector import BybitConnector
+from data.bybit_connector import BybitConnector
 from analyzer import MarketAnalyzer
 from dashboard import Dashboard
 
@@ -62,6 +62,9 @@ async def init_app():
         
         connector = BybitConnector(api_key, api_secret)
         
+        # Debug
+        st.write("Métodos disponibles:", dir(connector))
+        
         # Probar conexión
         with st.spinner('Verificando conexión con Bybit...'):
             if not connector.test_connection():
@@ -98,7 +101,7 @@ def main():
     try:
         st.set_page_config(
             page_title="Trading Intelligence Bureau",
-            page_icon="����",
+            page_icon="",
             layout="wide"
         )
         
