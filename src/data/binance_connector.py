@@ -1,58 +1,81 @@
-from binance.client import Client
 import pandas as pd
 from typing import Dict
 import logging
-import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from .base_connector import BaseExchangeConnector
+import ta
+import ccxt
 
 logger = logging.getLogger(__name__)
 
 class BinanceConnector(BaseExchangeConnector):
-    def __init__(self, api_key: str, api_secret: str, testnet: bool = False):
+    def __init__(self, api_key: str = "", api_secret: str = "", testnet: bool = False):
         super().__init__(api_key, api_secret, testnet)
-        self.client = Client(
-            api_key,
-            api_secret,
-            testnet=testnet
-        )
-        self.last_request_time = {}
-        self.min_request_interval = 1.0
+        self.exchange = ccxt.binance({
+            'apiKey': api_key,
+            'secret': api_secret,
+            'enableRateLimit': True,
+            'options': {
+                'defaultType': 'spot'
+            }
+        })
+        if testnet:
+            self.exchange.set_sandbox_mode(True)
         
     def test_connection(self) -> bool:
         """Prueba la conexión con Binance"""
         try:
-            self.client.get_system_status()
+            self.exchange.fetch_ticker('BTC/USDT')
             logger.info("Conexión exitosa con Binance")
             return True
         except Exception as e:
             logger.error(f"Error testing connection: {str(e)}")
             return False
             
-    async def get_kline_data(self, symbol: str, interval: str = "15m") -> pd.DataFrame:
+    async def get_kline_data(self, symbol: str, interval: str = "1d") -> pd.DataFrame:
         """Obtiene datos de velas para un par"""
         try:
-            klines = self.client.get_klines(
-                symbol=symbol,
-                interval=interval,
-                limit=100
+            # Convertir el símbolo al formato de CCXT
+            ccxt_symbol = symbol.replace('USDT', '/USDT')
+            
+            # Obtener datos
+            ohlcv = self.exchange.fetch_ohlcv(
+                ccxt_symbol,
+                interval,
+                limit=365  # 1 año de datos
             )
             
-            df = pd.DataFrame(klines, columns=[
-                'timestamp', 'open', 'high', 'low', 'close', 'volume',
-                'close_time', 'quote_volume', 'trades', 'taker_buy_base',
-                'taker_buy_quote', 'ignore'
-            ])
-            
-            df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
+            # Convertir a DataFrame
+            df = pd.DataFrame(
+                ohlcv,
+                columns=['timestamp', 'Open', 'High', 'Low', 'Close', 'Volume']
+            )
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.set_index('timestamp', inplace=True)
             
-            return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+            # Calcular indicadores técnicos
+            df['RSI'] = ta.momentum.RSIIndicator(df['Close']).rsi()
+            
+            macd = ta.trend.MACD(df['Close'])
+            df['MACD'] = macd.macd()
+            df['MACD_signal'] = macd.macd_signal()
+            
+            bollinger = ta.volatility.BollingerBands(df['Close'])
+            df['BB_high'] = bollinger.bollinger_hband()
+            df['BB_low'] = bollinger.bollinger_lband()
+            df['BB_mid'] = bollinger.bollinger_mavg()
+            
+            # Promedios Móviles
+            df['SMA_20'] = ta.trend.sma_indicator(df['Close'], window=20)
+            df['SMA_50'] = ta.trend.sma_indicator(df['Close'], window=50)
+            df['SMA_200'] = ta.trend.sma_indicator(df['Close'], window=200)
+            
+            return df
             
         except Exception as e:
             logger.error(f"Error getting kline data for {symbol}: {str(e)}")
             raise
-            
+
     async def get_market_data(self) -> Dict[str, pd.DataFrame]:
         """Obtiene datos de todos los pares"""
         market_data = {}
@@ -69,4 +92,4 @@ class BinanceConnector(BaseExchangeConnector):
         if errors and len(errors) == len(self.trading_pairs):
             raise Exception(f"Failed to get data for all pairs: {', '.join(errors)}")
             
-        return market_data 
+        return market_data
