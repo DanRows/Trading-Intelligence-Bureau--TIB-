@@ -1,8 +1,8 @@
 from typing import Optional
 from .base_connector import BaseExchangeConnector
 from .bybit_connector import BybitConnector
+from .yahoo_connector import YahooConnector
 from .binance_connector import BinanceConnector
-from .coingecko_connector import CoinGeckoConnector
 
 class ExchangeFactory:
     @staticmethod
@@ -16,9 +16,9 @@ class ExchangeFactory:
         Crea un conector para el exchange especificado
         
         Args:
-            exchange: Nombre del exchange ('bybit', 'binance', 'coingecko')
-            api_key: API key (opcional para CoinGecko)
-            api_secret: API secret (opcional para CoinGecko)
+            exchange: Nombre del exchange ('bybit', 'binance', 'yahoo')
+            api_key: API key (opcional para Yahoo)
+            api_secret: API secret (opcional para Yahoo)
             testnet: Si se debe usar testnet
         """
         exchange = exchange.lower()
@@ -27,7 +27,7 @@ class ExchangeFactory:
             return BybitConnector(api_key, api_secret, testnet)
         elif exchange == 'binance':
             return BinanceConnector(api_key, api_secret, testnet)
-        elif exchange == 'coingecko':
-            return CoinGeckoConnector()
+        elif exchange == 'yahoo':
+            return YahooConnector()
         else:
             return None 

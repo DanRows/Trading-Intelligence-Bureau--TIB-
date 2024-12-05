@@ -24,9 +24,13 @@ def get_credentials():
     # Seleccionar exchange
     exchange = st.sidebar.selectbox(
         "Exchange",
-        ["Bybit", "Binance"],
+        ["Yahoo", "Bybit", "Binance"],  # Yahoo primero ya que no requiere API keys
         help="Selecciona el exchange que deseas usar"
     )
+    
+    # Si es Yahoo, no necesitamos credenciales
+    if exchange.lower() == 'yahoo':
+        return exchange.lower(), "", ""
     
     # Intentar obtener credenciales de la sesión
     api_key = st.session_state.get(f'{exchange.upper()}_API_KEY', '')
