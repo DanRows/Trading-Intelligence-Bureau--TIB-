@@ -19,18 +19,62 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+def get_credentials():
+    """Obtiene las credenciales de Bybit"""
+    # Intentar obtener credenciales de la sesión
+    api_key = st.session_state.get('BYBIT_API_KEY', '')
+    api_secret = st.session_state.get('BYBIT_API_SECRET', '')
+    
+    # Si no hay credenciales en la sesión, mostrar formulario
+    if not api_key or not api_secret:
+        st.sidebar.header(" Configuración API")
+        
+        api_key = st.sidebar.text_input(
+            "API Key",
+            type="password",
+            help="Ingresa tu API Key de Bybit"
+        )
+        
+        api_secret = st.sidebar.text_input(
+            "API Secret",
+            type="password",
+            help="Ingresa tu API Secret de Bybit"
+        )
+        
+        if st.sidebar.button("Guardar Credenciales"):
+            if api_key and api_secret:
+                st.session_state['BYBIT_API_KEY'] = api_key
+                st.session_state['BYBIT_API_SECRET'] = api_secret
+                st.sidebar.success("✅ Credenciales guardadas!")
+            else:
+                st.sidebar.error("❌ Ambos campos son requeridos")
+                return None, None
+    
+    return api_key, api_secret
+
 async def init_app():
     """Inicializa la aplicación"""
     try:
-        load_dotenv()
-        api_key = os.getenv('BYBIT_API_KEY')
-        api_secret = os.getenv('BYBIT_API_SECRET')
-        
+        api_key, api_secret = get_credentials()
         if not api_key or not api_secret:
-            st.error("API keys no encontradas. Configura el archivo .env")
+            st.warning("⚠️ Configura tus credenciales de Bybit para comenzar")
             return
         
         connector = BybitConnector(api_key, api_secret)
+        
+        # Probar conexión
+        with st.spinner('Verificando conexión con Bybit...'):
+            if not await connector.test_connection():
+                st.error("❌ No se pudo conectar con Bybit. Verifica tus credenciales.")
+                # Limpiar credenciales inválidas
+                if 'BYBIT_API_KEY' in st.session_state:
+                    del st.session_state['BYBIT_API_KEY']
+                if 'BYBIT_API_SECRET' in st.session_state:
+                    del st.session_state['BYBIT_API_SECRET']
+                return
+            
+            st.sidebar.success("✅ Conectado a Bybit!")
+        
         analyzer = MarketAnalyzer()
         
         with st.spinner('Obteniendo datos del mercado...'):
