@@ -294,10 +294,14 @@ class Dashboard:
         
     async def cleanup(self):
         """Limpia recursos de manera asíncrona"""
+        logger.info("Iniciando limpieza de recursos del dashboard")
         if self.realtime_service:
             try:
+                logger.debug("Intentando cerrar realtime_service")
                 await self.realtime_service.close()
+                logger.info("realtime_service cerrado correctamente")
             except Exception as e:
-                logger.error(f"Error cleaning up realtime service: {str(e)}")
+                logger.error(f"Error cleaning up realtime service: {str(e)}", exc_info=True)
             finally:
                 self.realtime_service = None
+                logger.debug("Referencia a realtime_service eliminada")

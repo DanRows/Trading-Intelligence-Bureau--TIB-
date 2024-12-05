@@ -1,6 +1,6 @@
 import requests
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 import asyncio
 import aiohttp
@@ -43,11 +43,10 @@ class RealtimeService:
             "ADAUSDT": "ADA"
         }
         self.realtime_data = {}
-        self._session = None
+        self._session: Optional[ClientSession] = None
         
-    @property
-    def session(self) -> ClientSession:
-        """Obtiene o crea una sesión HTTP"""
+    async def _ensure_session(self) -> ClientSession:
+        """Asegura que existe una sesión válida"""
         if self._session is None or self._session.closed:
             logger.debug("Creando nueva sesión HTTP")
             self._session = ClientSession(
@@ -60,8 +59,7 @@ class RealtimeService:
         """Inicializa el servicio de manera asíncrona"""
         logger.info("Inicializando sesión HTTP")
         try:
-            if self._session is None:
-                self._session = self.session
+            await self._ensure_session()
             logger.info("Sesión HTTP inicializada correctamente")
         except Exception as e:
             logger.error(f"Error inicializando sesión: {str(e)}", exc_info=True)
@@ -73,6 +71,8 @@ class RealtimeService:
         """Obtiene datos completos de un símbolo"""
         logger.debug(f"Obteniendo datos para {symbol}")
         try:
+            session = await self._ensure_session()
+            
             crypto_symbol = self.symbols.get(symbol)
             if not crypto_symbol:
                 logger.warning(f"Símbolo no soportado: {symbol}")
@@ -85,32 +85,38 @@ class RealtimeService:
             }
             
             logger.debug(f"Realizando petición HTTP a {url}")
-            async with self.session.get(url, params=params) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Error API ({response.status}): {error_text}")
+            try:
+                async with session.get(url, params=params) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"Error API ({response.status}): {error_text}")
+                        return {}
+                        
+                    data = await response.json()
+                    logger.debug(f"Respuesta recibida para {symbol}")
+                    
+                    if 'RAW' in data and crypto_symbol in data['RAW']:
+                        raw_data = data['RAW'][crypto_symbol]['USD']
+                        result = {
+                            'symbol': symbol,
+                            'price': raw_data.get('PRICE', 0),
+                            'volume_24h': raw_data.get('VOLUME24HOUR', 0),
+                            'high_24h': raw_data.get('HIGH24HOUR', 0),
+                            'low_24h': raw_data.get('LOW24HOUR', 0),
+                            'change_24h': raw_data.get('CHANGEPCT24HOUR', 0),
+                            'market_cap': raw_data.get('MKTCAP', 0),
+                            'last_update': datetime.fromtimestamp(raw_data.get('LASTUPDATE', 0)),
+                            'supply': raw_data.get('SUPPLY', 0)
+                        }
+                        logger.debug(f"Datos procesados para {symbol}: {result}")
+                        return result
+                        
+                    logger.warning(f"Datos no encontrados para {symbol}")
                     return {}
-                    
-                data = await response.json()
-                logger.debug(f"Respuesta recibida para {symbol}")
-                
-                if 'RAW' in data and crypto_symbol in data['RAW']:
-                    raw_data = data['RAW'][crypto_symbol]['USD']
-                    result = {
-                        'symbol': symbol,
-                        'price': raw_data.get('PRICE', 0),
-                        'volume_24h': raw_data.get('VOLUME24HOUR', 0),
-                        'high_24h': raw_data.get('HIGH24HOUR', 0),
-                        'low_24h': raw_data.get('LOW24HOUR', 0),
-                        'change_24h': raw_data.get('CHANGEPCT24HOUR', 0),
-                        'market_cap': raw_data.get('MKTCAP', 0),
-                        'last_update': datetime.fromtimestamp(raw_data.get('LASTUPDATE', 0)),
-                        'supply': raw_data.get('SUPPLY', 0)
-                    }
-                    logger.debug(f"Datos procesados para {symbol}: {result}")
-                    return result
-                    
-                logger.warning(f"Datos no encontrados para {symbol}")
+            except Exception as e:
+                logger.error(f"Error en petición HTTP: {str(e)}", exc_info=True)
+                # Recrear sesión en caso de error
+                await self.close()
                 return {}
                 
         except asyncio.CancelledError:
@@ -123,11 +129,12 @@ class RealtimeService:
     async def close(self):
         """Cierra la sesión HTTP de manera segura"""
         logger.info("Cerrando sesión HTTP")
-        if self._session and not self._session.closed:
+        if self._session:
             try:
-                logger.debug("Iniciando cierre de sesión")
-                await self._session.close()
-                logger.info("Sesión cerrada correctamente")
+                if not self._session.closed:
+                    logger.debug("Iniciando cierre de sesión")
+                    await self._session.close()
+                    logger.info("Sesión cerrada correctamente")
             except Exception as e:
                 logger.error(f"Error cerrando sesión: {str(e)}", exc_info=True)
             finally:
