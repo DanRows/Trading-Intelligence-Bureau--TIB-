@@ -355,6 +355,10 @@ class Dashboard:
                         # Mostrar resultados
                         await self._render_backtest_results(results)
                         
+        except Exception as e:
+            logger.error(f"Error en backtesting: {str(e)}")
+            st.error(f"Error: {str(e)}")
+            
     async def _render_backtest_results(self, results: Dict[str, Any]):
         """Renderiza los resultados del backtest."""
         if not results:
@@ -648,3 +652,7 @@ class Dashboard:
                 st.dataframe(history_df, hide_index=True)
             else:
                 st.info("No hay historial de órdenes")
+                
+        except Exception as e:
+            logger.error(f"Error en portfolio: {str(e)}")
+            st.error(f"Error: {str(e)}")
