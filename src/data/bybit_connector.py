@@ -11,6 +11,12 @@ class BybitConnector(BaseConnector):
     """Conector para Bybit."""
     
     def __init__(self, settings: Settings):
+        """
+        Inicializa el conector de Bybit.
+        
+        Args:
+            settings: Configuración global
+        """
         super().__init__(settings)
         self.client = HTTP(
             testnet=settings.USE_TESTNET,

@@ -13,17 +13,29 @@ class ExchangeFactory:
         'bybit': BybitConnector
     }
     
-    @classmethod
-    def create_exchange(cls, settings: Settings) -> BaseConnector:
+    @staticmethod
+    def create_exchange(settings: Settings) -> BaseConnector:
+        """
+        Crea una instancia del conector apropiado.
+        
+        Args:
+            settings: Configuración global
+            
+        Returns:
+            Instancia de BaseConnector
+        
+        Raises:
+            ValueError: Si el exchange no está soportado
+        """
         try:
             exchange_name = settings.get('EXCHANGE', 'bybit').lower()
             
-            if exchange_name not in cls._connectors:
+            if exchange_name not in ExchangeFactory._connectors:
                 raise ValueError(f"Exchange no soportado: {exchange_name}")
                 
-            connector_class = cls._connectors[exchange_name]
+            connector_class = ExchangeFactory._connectors[exchange_name]
             return connector_class(settings)
             
         except Exception as e:
             logger.error(f"Error creando conector: {str(e)}")
-            raise 
+            raise
