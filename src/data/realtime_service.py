@@ -6,9 +6,9 @@ import aiohttp
 from aiohttp import ClientTimeout, ClientSession
 from collections import OrderedDict
 import json
-from ..config.settings import Settings
-from ..data.base_connector import RateLimiter, RateLimitError
-from ..data.market_data_service import MarketDataService
+from src.config.settings import Settings
+from src.utils.rate_limiter import RateLimiter
+from src.data.market_data_service import MarketDataService
 import pandas as pd
 
 logger = logging.getLogger(__name__)

@@ -89,35 +89,3 @@ class MarketDataService:
         except Exception as e:
             logger.error(f"Error procesando datos de mercado: {str(e)}")
             return None
-            
-    def resample_data(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
-        """
-        Remuestrea datos a un timeframe diferente.
-        
-        Args:
-            df: DataFrame con datos OHLCV
-            timeframe: Nuevo intervalo (e.g., '1H', '4H', '1D')
-            
-        Returns:
-            DataFrame remuestreado
-        """
-        try:
-            resampled = pd.DataFrame()
-            
-            # Reglas de agregación por columna
-            resampled['open'] = df['open'].resample(timeframe).first()
-            resampled['high'] = df['high'].resample(timeframe).max()
-            resampled['low'] = df['low'].resample(timeframe).min()
-            resampled['close'] = df['close'].resample(timeframe).last()
-            resampled['volume'] = df['volume'].resample(timeframe).sum()
-            
-            # Recalcular campos derivados
-            resampled['returns'] = resampled['close'].pct_change()
-            resampled['volatility'] = resampled['returns'].rolling(window=20).std() * np.sqrt(252)
-            resampled['typical_price'] = (resampled['high'] + resampled['low'] + resampled['close']) / 3
-            
-            return resampled
-            
-        except Exception as e:
-            logger.error(f"Error remuestreando datos: {str(e)}")
-            raise
