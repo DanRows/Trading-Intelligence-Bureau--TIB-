@@ -1,37 +1,79 @@
-from pybit.unified_trading import HTTP
+from abc import ABC, abstractmethod
+from typing import Dict, Any, Optional
 import pandas as pd
-from typing import Dict
 import logging
-from datetime import datetime
+import time
+import asyncio
+from src.config.settings import Settings
+from src.utils.rate_limiter import RateLimiter
 
-class BybitConnector:
-    def __init__(self, api_key: str, api_secret: str):
-        self.client = HTTP(
-            testnet=False,
-            api_key=api_key,
-            api_secret=api_secret
-        )
-        self.trading_pairs = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
-        
-    async def get_kline_data(self, symbol: str, interval: str = "15") -> pd.DataFrame:
-        """Obtiene datos de velas para un par"""
-        response = self.client.get_kline(
-            category="spot",
-            symbol=symbol,
-            interval=interval,
-            limit=100
-        )
-        
-        df = pd.DataFrame(response['result']['list'])
-        df.columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover']
-        df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-        
-        return df.sort_values('timestamp')
+logger = logging.getLogger(__name__)
 
-    async def get_market_data(self) -> Dict[str, pd.DataFrame]:
-        """Obtiene datos de todos los pares"""
-        market_data = {}
-        for pair in self.trading_pairs:
-            market_data[pair] = await self.get_kline_data(pair)
-        return market_data 
+class BaseConnector(ABC):
+    """Clase base para conectores de exchanges."""
+    
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self.trading_pairs = settings.TRADING_PAIRS
+        
+        # Rate limiting
+        self.request_counts: Dict[str, int] = {}
+        self.last_request_time: Dict[str, float] = {}
+        self.rate_limits = {
+            'default': {'requests': 60, 'period': 60},  # 60 requests por minuto
+            'market_data': {'requests': 120, 'period': 60},  # 120 requests por minuto
+            'trading': {'requests': 30, 'period': 60}  # 30 requests por minuto
+        }
+        
+    async def _rate_limit(self, endpoint_type: str = 'default') -> None:
+        """
+        Implementa rate limiting para las peticiones.
+        
+        Args:
+            endpoint_type: Tipo de endpoint ('default', 'market_data', 'trading')
+        """
+        try:
+            now = time.time()
+            limit = self.rate_limits.get(endpoint_type, self.rate_limits['default'])
+            
+            # Inicializar contadores si no existen
+            if endpoint_type not in self.request_counts:
+                self.request_counts[endpoint_type] = 0
+                self.last_request_time[endpoint_type] = now
+                
+            # Reiniciar contador si ha pasado el período
+            if now - self.last_request_time[endpoint_type] >= limit['period']:
+                self.request_counts[endpoint_type] = 0
+                self.last_request_time[endpoint_type] = now
+                
+            # Verificar límite
+            if self.request_counts[endpoint_type] >= limit['requests']:
+                wait_time = limit['period'] - (now - self.last_request_time[endpoint_type])
+                if wait_time > 0:
+                    logger.warning(f"Rate limit alcanzado para {endpoint_type}, esperando {wait_time:.2f}s")
+                    await asyncio.sleep(wait_time)
+                    # Reiniciar después de esperar
+                    self.request_counts[endpoint_type] = 0
+                    self.last_request_time[endpoint_type] = time.time()
+                    
+            # Incrementar contador
+            self.request_counts[endpoint_type] += 1
+            
+        except Exception as e:
+            logger.error(f"Error en rate limiting: {str(e)}")
+            raise
+            
+    @abstractmethod
+    async def get_market_data(self, symbol: str) -> pd.DataFrame:
+        """Obtiene datos de mercado para un símbolo."""
+        pass
+        
+    @abstractmethod
+    async def get_orderbook(self, symbol: str) -> Dict[str, Any]:
+        """Obtiene el libro de órdenes para un símbolo."""
+        pass
+        
+    @abstractmethod
+    async def get_recent_trades(self, symbol: str) -> pd.DataFrame:
+        """Obtiene trades recientes para un símbolo."""
+        pass

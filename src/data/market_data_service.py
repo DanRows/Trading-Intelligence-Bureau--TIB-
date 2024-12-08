@@ -1,8 +1,9 @@
 import pandas as pd
+import numpy as np
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
-import numpy as np
+from src.config.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +12,9 @@ class MarketDataService:
     
     REQUIRED_COLUMNS = ['open', 'high', 'low', 'close', 'volume']
     
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        
     @staticmethod
     def validate_dataframe(df: pd.DataFrame) -> bool:
         """
@@ -48,8 +52,7 @@ class MarketDataService:
             logger.error(f"Error validando DataFrame: {str(e)}")
             return False
             
-    @staticmethod
-    def process_market_data(data: Dict[str, Any]) -> Optional[pd.DataFrame]:
+    def process_market_data(self, data: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """
         Procesa datos de mercado y los convierte a DataFrame.
         
@@ -64,7 +67,7 @@ class MarketDataService:
             df = pd.DataFrame(data)
             
             # Validar estructura
-            if not MarketDataService.validate_dataframe(df):
+            if not self.validate_dataframe(df):
                 return None
                 
             # Procesar índice temporal
@@ -87,8 +90,7 @@ class MarketDataService:
             logger.error(f"Error procesando datos de mercado: {str(e)}")
             return None
             
-    @staticmethod
-    def resample_data(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+    def resample_data(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         """
         Remuestrea datos a un timeframe diferente.
         
@@ -118,4 +120,4 @@ class MarketDataService:
             
         except Exception as e:
             logger.error(f"Error remuestreando datos: {str(e)}")
-            raise 
+            raise
