@@ -1,89 +1,117 @@
-import requests
 import pandas as pd
-from typing import Dict
+import aiohttp
 import logging
-from datetime import datetime
-from .base_connector import BaseExchangeConnector
-import ta
+from typing import Dict, Any, List, Optional
+from src.config.settings import Settings
 
 logger = logging.getLogger(__name__)
 
-class CoinGeckoConnector(BaseExchangeConnector):
-    def __init__(self, api_key: str = "", api_secret: str = "", testnet: bool = False):
-        super().__init__(api_key, api_secret, testnet)
+class CoingeckoConnector:
+    """Conector para la API de Coingecko."""
+    
+    def __init__(self, settings: Settings):
+        """
+        Inicializa el conector de Coingecko.
+        
+        Args:
+            settings: Configuración global
+        """
+        self.settings = settings
         self.base_url = "https://api.coingecko.com/api/v3"
-        self.crypto_ids = {
-            "BTCUSDT": "bitcoin",
-            "ETHUSDT": "ethereum",
-            "SOLUSDT": "solana"
-        }
         
-    def test_connection(self) -> bool:
-        """Prueba la conexión con CoinGecko"""
-        try:
-            response = requests.get(f"{self.base_url}/ping")
-            return response.status_code == 200
-        except Exception as e:
-            logger.error(f"Error testing connection: {str(e)}")
-            return False
-            
-    async def get_kline_data(self, symbol: str, interval: str = "15") -> pd.DataFrame:
-        """Obtiene datos de velas para un par"""
-        try:
-            crypto_id = self.crypto_ids.get(symbol)
-            if not crypto_id:
-                raise ValueError(f"Unsupported symbol: {symbol}")
-                
-            url = f"{self.base_url}/coins/{crypto_id}/market_chart"
-            params = {
-                "vs_currency": "usd",
-                "days": 90,
-                "interval": "daily"
-            }
-            
-            response = requests.get(url, params=params)
-            data = response.json()
-            
-            df = pd.DataFrame(data['prices'], columns=['timestamp', 'close'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df['volume'] = [x[1] for x in data['total_volumes']]
-            
-            # Calcular OHLC simulado (ya que CoinGecko solo da precios de cierre)
-            df['open'] = df['close'].shift(1)
-            df['high'] = df['close'] * 1.001  # Simulado
-            df['low'] = df['close'] * 0.999   # Simulado
-            
-            # Calcular indicadores técnicos
-            df['RSI'] = ta.momentum.RSIIndicator(df['close']).rsi()
-            macd = ta.trend.MACD(df['close'])
-            df['MACD'] = macd.macd()
-            df['MACD_signal'] = macd.macd_signal()
-            
-            bollinger = ta.volatility.BollingerBands(df['close'])
-            df['BB_high'] = bollinger.bollinger_hband()
-            df['BB_low'] = bollinger.bollinger_lband()
-            df['BB_mid'] = bollinger.bollinger_mavg()
-            
-            return df.set_index('timestamp')
-            
-        except Exception as e:
-            logger.error(f"Error getting kline data for {symbol}: {str(e)}")
-            raise
-
-    async def get_market_data(self) -> Dict[str, pd.DataFrame]:
-        """Obtiene datos de todos los pares"""
-        market_data = {}
-        errors = []
+    async def search_coins(self, query: str) -> List[Dict[str, Any]]:
+        """
+        Busca criptomonedas por nombre o símbolo.
         
-        for pair in self.trading_pairs:
-            try:
-                market_data[pair] = await self.get_kline_data(pair)
-            except Exception as e:
-                logger.error(f"Error getting market data for {pair}: {str(e)}")
-                errors.append(f"{pair}: {str(e)}")
-                continue
-                
-        if errors and len(errors) == len(self.trading_pairs):
-            raise Exception(f"Failed to get data for all pairs: {', '.join(errors)}")
+        Args:
+            query: Término de búsqueda
             
-        return market_data 
+        Returns:
+            Lista de monedas encontradas
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self.base_url}/search",
+                    params={"query": query}
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data['coins']
+                    else:
+                        logger.error(f"Error en búsqueda: {response.status}")
+                        return []
+                        
+        except Exception as e:
+            logger.error(f"Error buscando monedas: {str(e)}")
+            return []
+            
+    async def get_coin_data(self, coin_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Obtiene datos detallados de una criptomoneda.
+        
+        Args:
+            coin_id: ID de la moneda en Coingecko
+            
+        Returns:
+            Dict con datos de la moneda
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self.base_url}/coins/{coin_id}",
+                    params={
+                        "localization": "false",
+                        "tickers": "false",
+                        "market_data": "true",
+                        "community_data": "false",
+                        "developer_data": "false"
+                    }
+                ) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    else:
+                        logger.error(f"Error obteniendo datos: {response.status}")
+                        return None
+                        
+        except Exception as e:
+            logger.error(f"Error obteniendo datos de moneda: {str(e)}")
+            return None
+            
+    async def get_coin_history(self, coin_id: str, days: int = 30) -> Optional[pd.DataFrame]:
+        """
+        Obtiene historial de precios de una criptomoneda.
+        
+        Args:
+            coin_id: ID de la moneda
+            days: Número de días de historial
+            
+        Returns:
+            DataFrame con historial de precios
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self.base_url}/coins/{coin_id}/market_chart",
+                    params={
+                        "vs_currency": "usd",
+                        "days": days,
+                        "interval": "daily"
+                    }
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        
+                        # Convertir a DataFrame
+                        df = pd.DataFrame(data['prices'], columns=['timestamp', 'price'])
+                        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                        df.set_index('timestamp', inplace=True)
+                        
+                        return df
+                    else:
+                        logger.error(f"Error obteniendo historial: {response.status}")
+                        return None
+                        
+        except Exception as e:
+            logger.error(f"Error obteniendo historial: {str(e)}")
+            return None

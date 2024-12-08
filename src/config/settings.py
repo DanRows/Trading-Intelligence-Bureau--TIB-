@@ -47,3 +47,12 @@ class Settings:
         """Retorna la configuración como diccionario."""
         return {k: v for k, v in self.__dict__.items() 
                 if not k.startswith('_')}
+        
+    def setup_credentials(self):
+        """Configura las credenciales a través de la interfaz de usuario."""
+        st.sidebar.subheader("Configuración de APIs")
+        
+        # Bybit
+        with st.sidebar.expander("Bybit", expanded=not bool(self.BYBIT_API_KEY)):
+            new_bybit_key = st.text_input(
+                "API Key",
