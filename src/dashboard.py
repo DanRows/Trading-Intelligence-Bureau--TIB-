@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 from typing import Dict, Any
 import logging
 from src.config.settings import Settings
+from src.data.base_connector import BaseConnector
 from src.data.market_data_service import MarketDataService
 from src.analyzer import MarketAnalyzer
 
@@ -12,8 +13,9 @@ logger = logging.getLogger(__name__)
 class Dashboard:
     """Dashboard principal de la aplicación."""
     
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, exchange: BaseConnector):
         self.settings = settings
+        self.exchange = exchange
         self.market_data = MarketDataService(settings)
         self.analyzer = MarketAnalyzer(settings)
         
@@ -77,13 +79,13 @@ class Dashboard:
                 'refresh_rate': refresh_rate if auto_refresh else None
             })
             
-    def _render_market_analysis(self):
+    async def _render_market_analysis(self):
         """Renderiza la sección de análisis de mercado."""
         try:
             symbol = st.session_state.symbol
             
             # Obtener y analizar datos
-            data = self.market_data.get_market_data(symbol)
+            data = await self.exchange.get_market_data(symbol)
             analysis = self.analyzer.analyze_market_data(data)
             
             # Mostrar métricas principales
