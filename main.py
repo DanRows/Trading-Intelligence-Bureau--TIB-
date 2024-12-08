@@ -3,13 +3,14 @@ import sys
 from pathlib import Path
 
 # Agregar el directorio raíz al PYTHONPATH
-ROOT_DIR = Path(__file__).parent
+ROOT_DIR = Path(__file__).parent.parent
 sys.path.append(str(ROOT_DIR))
 
 import streamlit as st
-from src.config import Settings
-from src.reporting.dashboard import TradingDashboard
+from src.config.settings import Settings
 from src.data.exchange_factory import ExchangeFactory
+from src.analyzer import MarketAnalyzer
+from src.dashboard import Dashboard
 
 def main():
     """Función principal de la aplicación."""
@@ -28,7 +29,7 @@ def main():
         exchange = ExchangeFactory.create_exchange(settings)
         
         # Inicializar y renderizar dashboard
-        dashboard = TradingDashboard(settings, exchange)
+        dashboard = Dashboard(settings, exchange)
         dashboard.render()
         
     except Exception as e:

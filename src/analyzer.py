@@ -12,7 +12,7 @@ class MarketAnalyzer:
     
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.market_data = MarketDataService()
+        self.market_data = MarketDataService(settings)
         
     def analyze_market_data(self, data: pd.DataFrame) -> Dict[str, Any]:
         """

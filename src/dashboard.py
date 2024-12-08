@@ -14,7 +14,7 @@ class Dashboard:
     
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.market_data = MarketDataService()
+        self.market_data = MarketDataService(settings)
         self.analyzer = MarketAnalyzer(settings)
         
     def render(self):
