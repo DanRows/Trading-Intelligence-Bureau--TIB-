@@ -6,6 +6,8 @@ import aiohttp
 from aiohttp import ClientTimeout, ClientSession
 from collections import OrderedDict
 import json
+from ..config.settings import Settings
+from ..data.base_connector import RateLimiter, RateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +29,11 @@ class RealtimeService:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.base_url = "https://min-api.cryptocompare.com/data"
-        self.symbols = {pair: pair.replace("USDT", "") for pair in settings.TRADING_PAIRS}
         self._session: Optional[ClientSession] = None
+        self.rate_limiter = RateLimiter(
+            max_requests=50,
+            time_window=60
+        )
         
         # Configuración de caché
         self.cache: OrderedDict[str, CacheEntry] = OrderedDict()
@@ -85,27 +90,15 @@ class RealtimeService:
             raise
             
     async def get_full_data(self, symbol: str) -> Dict[str, Any]:
-        """Obtiene datos completos de un símbolo."""
-        try:
-            # Verificar caché
-            cache_key = f"full_data_{symbol}"
-            cached = self._get_from_cache(cache_key)
-            if cached:
-                logger.debug(f"Datos obtenidos de caché para {symbol}")
-                return cached
-                
-            # Obtener datos frescos
-            data = await self._fetch_full_data(symbol)
+        """Obtiene datos completos con rate limiting."""
+        async with self.rate_limiter:
+            try:
+                return await self._fetch_data(symbol)
+            except RateLimitError:
+                logger.warning("Rate limit alcanzado, usando caché si está disponible")
+                return await self._get_cached_data(symbol)
             
-            # Actualizar caché
-            self._add_to_cache(cache_key, data)
-            
-            return data
-            
-        except Exception as e:
-            return await self._handle_error(e, symbol)
-            
-    async def _fetch_full_data(self, symbol: str) -> Dict[str, Any]:
+    async def _fetch_data(self, symbol: str) -> Dict[str, Any]:
         """Obtiene datos frescos de la API."""
         if symbol not in self.symbols:
             raise ValueError(f"Símbolo no soportado: {symbol}")
