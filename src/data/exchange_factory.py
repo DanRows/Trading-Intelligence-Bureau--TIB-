@@ -1,33 +1,31 @@
-from typing import Optional
-from .base_connector import BaseExchangeConnector
-from .bybit_connector import BybitConnector
-from .yahoo_connector import YahooConnector
-from .binance_connector import BinanceConnector
+from typing import Dict, Type
+import logging
+from src.config.settings import Settings
+from src.data.base_connector import BaseConnector
+from src.data.bybit_connector import BybitConnector
+from src.data.binance_connector import BinanceConnector
+
+logger = logging.getLogger(__name__)
 
 class ExchangeFactory:
-    @staticmethod
-    def create_connector(
-        exchange: str,
-        api_key: str = "",
-        api_secret: str = "",
-        testnet: bool = False
-    ) -> Optional[BaseExchangeConnector]:
-        """
-        Crea un conector para el exchange especificado
-        
-        Args:
-            exchange: Nombre del exchange ('bybit', 'binance', 'yahoo')
-            api_key: API key (opcional para Yahoo)
-            api_secret: API secret (opcional para Yahoo)
-            testnet: Si se debe usar testnet
-        """
-        exchange = exchange.lower()
-        
-        if exchange == 'bybit':
-            return BybitConnector(api_key, api_secret, testnet)
-        elif exchange == 'binance':
-            return BinanceConnector(api_key, api_secret, testnet)
-        elif exchange == 'yahoo':
-            return YahooConnector()
-        else:
-            return None 
+    """Factory para crear conectores de exchanges."""
+    
+    _connectors: Dict[str, Type[BaseConnector]] = {
+        'bybit': BybitConnector,
+        'binance': BinanceConnector
+    }
+    
+    @classmethod
+    def create_exchange(cls, settings: Settings) -> BaseConnector:
+        try:
+            exchange_name = settings.get('EXCHANGE', 'bybit').lower()
+            
+            if exchange_name not in cls._connectors:
+                raise ValueError(f"Exchange no soportado: {exchange_name}")
+                
+            connector_class = cls._connectors[exchange_name]
+            return connector_class(settings)
+            
+        except Exception as e:
+            logger.error(f"Error creando conector: {str(e)}")
+            raise 
