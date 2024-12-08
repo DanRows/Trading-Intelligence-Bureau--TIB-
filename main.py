@@ -1,31 +1,34 @@
 import os
 import sys
-import asyncio
-import streamlit as st
 from pathlib import Path
 
-# Agregar el directorio src al PYTHONPATH
-project_root = Path(__file__).parent
-sys.path.append(str(project_root))
+# Agregar el directorio raíz al PYTHONPATH
+ROOT_DIR = Path(__file__).parent
+sys.path.append(str(ROOT_DIR))
 
+import streamlit as st
 from src.config import Settings
-from src.data.exchange_factory import ExchangeFactory
 from src.reporting.dashboard import TradingDashboard
+from src.data.exchange_factory import ExchangeFactory
 
-async def main():
+def main():
     """Función principal de la aplicación."""
     try:
+        # Configurar página
+        st.set_page_config(
+            page_title="Trading Intelligence Bureau",
+            page_icon="📊",
+            layout="wide"
+        )
+        
         # Inicializar configuración
         settings = Settings()
         
         # Crear conector
-        exchange = ExchangeFactory.create_exchange(
-            exchange_name=st.session_state.get('exchange', 'Bybit'),
-            settings=settings
-        )
+        exchange = ExchangeFactory.create_exchange(settings)
         
         # Inicializar y renderizar dashboard
-        dashboard = await TradingDashboard(settings, exchange).initialize()
+        dashboard = TradingDashboard(settings, exchange)
         dashboard.render()
         
     except Exception as e:
@@ -33,12 +36,4 @@ async def main():
         raise
 
 if __name__ == "__main__":
-    # Configurar página
-    st.set_page_config(
-        page_title="Trading Intelligence Bureau",
-        page_icon="📊",
-        layout="wide"
-    )
-    
-    # Ejecutar aplicación
-    asyncio.run(main()) 
+    main()

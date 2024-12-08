@@ -4,7 +4,7 @@ import pandas as pd
 import logging
 import time
 import asyncio
-from ..config.settings import Settings
+from src.config.settings import Settings
 
 logger = logging.getLogger(__name__)
 
