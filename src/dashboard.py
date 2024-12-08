@@ -33,7 +33,7 @@ class Dashboard:
             st.title("Trading Intelligence Bureau")
             
             # Sidebar
-            self._render_sidebar()
+            await self._render_sidebar()
             
             # Tabs principales
             tab1, tab2, tab3 = st.tabs([
@@ -53,7 +53,7 @@ class Dashboard:
             logger.error(f"Error renderizando dashboard: {str(e)}")
             st.error(f"Error: {str(e)}")
             
-    def _render_sidebar(self):
+    async def _render_sidebar(self):
         """Renderiza la barra lateral."""
         with st.sidebar:
             st.header("Configuración")
@@ -66,9 +66,10 @@ class Dashboard:
             )
             
             # Selección de par
+            trading_pairs = await self.exchange.get_trading_pairs()
             symbol = st.selectbox(
                 "Par de Trading",
-                options=self.settings.TRADING_PAIRS
+                options=trading_pairs
             )
             
             # Timeframe
@@ -129,9 +130,17 @@ class Dashboard:
         try:
             symbol = st.session_state.symbol
             
-            # Obtener y analizar datos
-            data = await self.exchange.get_market_data(symbol)
-            analysis = self.analyzer.analyze_market_data(data)
+            # Obtener datos del mercado
+            market_data = await self.exchange.get_market_data(symbol)
+            if market_data is None or market_data.empty:
+                st.error("No se pudieron obtener datos del mercado")
+                return
+                
+            # Analizar datos
+            analysis = await self.analyzer.analyze_market_data(market_data)
+            if not analysis:
+                st.error("No se pudo realizar el análisis de mercado")
+                return
             
             # Mostrar métricas principales
             col1, col2, col3, col4 = st.columns(4)
@@ -139,48 +148,55 @@ class Dashboard:
             with col1:
                 st.metric(
                     "Precio Actual",
-                    f"${data['close'].iloc[-1]:,.2f}",
-                    f"{data['close'].pct_change().iloc[-1]:.2%}"
+                    f"${float(market_data['close'].iloc[-1]):,.2f}",
+                    f"{float(market_data['close'].pct_change().iloc[-1]):.2%}"
                 )
                 
             with col2:
                 st.metric(
                     "Volumen 24h",
-                    f"${data['volume'].iloc[-1]:,.0f}"
+                    f"${float(market_data['volume'].iloc[-1]):,.0f}"
                 )
                 
             with col3:
                 st.metric(
                     "RSI",
-                    f"{analysis['indicators']['rsi']:.2f}"
+                    f"{float(analysis['indicators']['rsi']):,.2f}"
                 )
                 
             with col4:
                 st.metric(
                     "Volatilidad",
-                    f"{analysis['metrics']['volatility']:.2%}"
+                    f"{float(analysis['metrics']['volatility']):.2%}"
                 )
                 
             # Gráfico de precios
             st.subheader("Análisis Técnico")
-            fig = self._create_price_chart(data)
+            fig = await self._create_price_chart(market_data)
             st.plotly_chart(fig, use_container_width=True)
             
             # Orderbook y profundidad de mercado
             st.subheader("Profundidad de Mercado")
             orderbook = await self.exchange.get_orderbook(symbol)
-            self._render_orderbook(orderbook)
+            if orderbook:
+                await self._render_orderbook(orderbook)
+            else:
+                st.error("No se pudo obtener el orderbook")
             
             # Trades recientes
             st.subheader("Trades Recientes")
             trades = await self.exchange.get_recent_trades(symbol)
-            self._render_trades_table(trades)
+            if trades is not None and not trades.empty:
+                await self._render_trades_table(trades)
+            else:
+                st.error("No se pudieron obtener los trades recientes")
             
         except Exception as e:
             logger.error(f"Error en análisis de mercado: {str(e)}")
             st.error(f"Error: {str(e)}")
+            raise
             
-    def _render_orderbook(self, orderbook: Dict[str, Any]):
+    async def _render_orderbook(self, orderbook: Dict[str, Any]):
         """Renderiza el orderbook."""
         col1, col2 = st.columns(2)
         
@@ -194,25 +210,17 @@ class Dashboard:
             asks_df = pd.DataFrame(orderbook['asks'], columns=['Precio', 'Cantidad'])
             st.dataframe(asks_df, hide_index=True)
             
-    def _render_trades_table(self, trades: pd.DataFrame):
+    async def _render_trades_table(self, trades: pd.DataFrame):
         """Renderiza la tabla de trades recientes."""
         trades = trades[['timestamp', 'price', 'size', 'side']].copy()
         trades.columns = ['Timestamp', 'Precio', 'Cantidad', 'Lado']
         st.dataframe(trades, hide_index=True)
-            
-    async def _render_backtesting(self):
-        """Renderiza la sección de backtesting."""
-        st.info("Sección de backtesting en desarrollo")
         
-    async def _render_portfolio(self):
-        """Renderiza la sección de portfolio."""
-        st.info("Sección de portfolio en desarrollo")
-            
-    def _create_price_chart(self, data: pd.DataFrame) -> go.Figure:
-        """Crea gráfico de precios con indicadores."""
+    async def _create_price_chart(self, data: pd.DataFrame) -> go.Figure:
+        """Crea el gráfico de precios."""
         fig = go.Figure()
         
-        # Velas
+        # Candlestick chart
         fig.add_trace(go.Candlestick(
             x=data.index,
             open=data['open'],
@@ -222,25 +230,20 @@ class Dashboard:
             name="OHLC"
         ))
         
-        # Volumen
-        fig.add_trace(go.Bar(
-            x=data.index,
-            y=data['volume'],
-            name="Volumen",
-            yaxis="y2"
-        ))
-        
-        # Layout
+        # Configuración del layout
         fig.update_layout(
             title=f"{st.session_state.symbol} - {st.session_state.timeframe}",
             yaxis_title="Precio",
-            yaxis2=dict(
-                title="Volumen",
-                overlaying="y",
-                side="right"
-            ),
-            xaxis_rangeslider_visible=False,
-            height=600
+            xaxis_title="Fecha",
+            template="plotly_dark"
         )
         
         return fig
+        
+    async def _render_backtesting(self):
+        """Renderiza la sección de backtesting."""
+        st.info("Sección de backtesting en desarrollo")
+        
+    async def _render_portfolio(self):
+        """Renderiza la sección de portfolio."""
+        st.info("Sección de portfolio en desarrollo")

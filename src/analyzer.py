@@ -14,7 +14,7 @@ class MarketAnalyzer:
         self.settings = settings
         self.market_data = MarketDataService(settings)
         
-    def analyze_market_data(self, data: pd.DataFrame) -> Dict[str, Any]:
+    async def analyze_market_data(self, data: pd.DataFrame) -> Dict[str, Any]:
         """
         Analiza datos de mercado.
         
@@ -25,11 +25,15 @@ class MarketAnalyzer:
             Dict con resultados del análisis
         """
         try:
+            metrics = await self._calculate_metrics(data)
+            indicators = await self._calculate_indicators(data)
+            patterns = await self._detect_patterns(data)
+            
             results = {
                 'timestamp': pd.Timestamp.now(),
-                'metrics': self._calculate_metrics(data),
-                'indicators': self._calculate_indicators(data),
-                'patterns': self._detect_patterns(data)
+                'metrics': metrics,
+                'indicators': indicators,
+                'patterns': patterns
             }
             return results
             
@@ -37,7 +41,7 @@ class MarketAnalyzer:
             logger.error(f"Error analizando datos: {str(e)}")
             return {}
             
-    def _calculate_metrics(self, data: pd.DataFrame) -> Dict[str, float]:
+    async def _calculate_metrics(self, data: pd.DataFrame) -> Dict[str, float]:
         """Calcula métricas básicas."""
         return {
             'volatility': data['close'].pct_change().std() * np.sqrt(252),
@@ -45,16 +49,35 @@ class MarketAnalyzer:
             'volume_ma': data['volume'].rolling(20).mean().iloc[-1]
         }
         
-    def _calculate_indicators(self, data: pd.DataFrame) -> Dict[str, Any]:
+    async def _calculate_indicators(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Calcula indicadores técnicos."""
+        close = data['close']
+        high = data['high']
+        low = data['low']
+        volume = data['volume']
+        
+        # Medias móviles
+        sma_20 = close.rolling(window=20).mean()
+        sma_50 = close.rolling(window=50).mean()
+        
+        # RSI
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        
         return {
-            'rsi': self._calculate_rsi(data['close']),
-            'macd': self._calculate_macd(data['close']),
-            'bollinger': self._calculate_bollinger_bands(data['close'])
+            'sma_20': sma_20.iloc[-1],
+            'sma_50': sma_50.iloc[-1],
+            'rsi': rsi.iloc[-1],
+            'trend': 'alcista' if sma_20.iloc[-1] > sma_50.iloc[-1] else 'bajista'
         }
         
-    def _detect_patterns(self, data: pd.DataFrame) -> List[str]:
+    async def _detect_patterns(self, data: pd.DataFrame) -> List[str]:
         """Detecta patrones de velas."""
         patterns = []
-        # Implementar detección de patrones
-        return patterns 
+        
+        # Implementar detección de patrones aquí
+        # Por ahora retornamos una lista vacía
+        return patterns
