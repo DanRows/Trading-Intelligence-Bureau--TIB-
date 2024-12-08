@@ -2,191 +2,220 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import asyncio
 from datetime import datetime, timedelta
 from ..data.bybit_connector import BybitConnector
 from .report_generator import ReportGenerator
+import logging
+from ..config.settings import Settings
+from ..data.base_connector import BaseExchangeConnector
+from ..agents.technical_analyst import TechnicalAnalyst
+from ..data.realtime_service import RealtimeService
+from .backtest_report import BacktestReport
+
+logger = logging.getLogger(__name__)
 
 class TradingDashboard:
-    def __init__(self, api_key: str, api_secret: str):
-        self.connector = BybitConnector(api_key, api_secret)
-        self.report_generator = ReportGenerator(self.connector)
-        
-    def run(self):
-        """Inicializa y ejecuta el dashboard"""
-        st.set_page_config(page_title="Crypto Trading Analysis", layout="wide")
-        st.title("Análisis de Trading de Criptomonedas")
-        
-        # Sidebar para configuración
-        self._render_sidebar()
-        
-        # Layout principal
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            self._render_market_overview()
-            self._render_price_charts()
-            
-        with col2:
-            self._render_correlation_matrix()
-            self._render_risk_assessment()
-
-    def _render_sidebar(self):
-        """Renderiza la barra lateral con controles"""
-        st.sidebar.header("Configuración")
-        
-        # Intervalo de actualización
-        update_interval = st.sidebar.slider(
-            "Intervalo de actualización (segundos)",
-            min_value=5,
-            max_value=300,
-            value=60
+    def __init__(self, settings: Settings, connector: BaseExchangeConnector):
+        self.settings = settings
+        self.connector = connector
+        self.realtime_service = None
+        self.analyst = TechnicalAnalyst(
+            name="main_analyst",
+            config=settings.as_dict
         )
+        self.backtest_report = BacktestReport(settings, connector)
         
-        # Selección de pares
-        selected_pairs = st.sidebar.multiselect(
-            "Pares de Trading",
-            self.connector.trading_pairs,
-            default=self.connector.trading_pairs[:3]
-        )
-        
-        # Botón de actualización manual
-        if st.sidebar.button("Actualizar Ahora"):
-            st.experimental_rerun()
-
-    async def _render_market_overview(self):
-        """Renderiza la visión general del mercado"""
-        st.subheader("Visión General del Mercado")
-        
+    async def initialize(self):
+        """Inicializa servicios necesarios."""
         try:
-            report = await self.report_generator.generate_market_report()
-            overview = report["market_overview"]
+            self.realtime_service = await RealtimeService(self.settings).initialize()
+            logger.info("Dashboard inicializado correctamente")
+            return self
+        except Exception as e:
+            logger.error(f"Error inicializando dashboard: {str(e)}")
+            raise
             
-            # Métricas principales
-            col1, col2, col3 = st.columns(3)
+    def render(self):
+        """Renderiza el dashboard completo."""
+        try:
+            self._setup_page()
+            self._render_sidebar()
+            
+            # Tabs principales
+            tab1, tab2, tab3 = st.tabs([
+                "📊 Análisis en Tiempo Real",
+                "🔄 Backtesting",
+                "📈 Portfolio"
+            ])
+            
+            with tab1:
+                self._render_realtime_analysis()
+                
+            with tab2:
+                self.backtest_report.render()
+                
+            with tab3:
+                self._render_portfolio()
+                
+        except Exception as e:
+            logger.error(f"Error renderizando dashboard: {str(e)}")
+            st.error(f"Error: {str(e)}")
+            
+    def _setup_page(self):
+        """Configura la página de Streamlit."""
+        st.set_page_config(
+            page_title="Trading Intelligence Bureau",
+            page_icon="📊",
+            layout="wide"
+        )
+        
+        # Título principal
+        st.title("Trading Intelligence Bureau")
+        st.markdown("---")
+        
+    def _render_sidebar(self):
+        """Renderiza la barra lateral."""
+        with st.sidebar:
+            st.header("⚙️ Configuración")
+            
+            # Selección de exchange
+            exchange = st.selectbox(
+                "Exchange",
+                options=["Bybit", "Binance", "Yahoo"],
+                help="Selecciona el exchange para operar"
+            )
+            
+            # Selección de par
+            symbol = st.selectbox(
+                "Par de Trading",
+                options=self.connector.trading_pairs,
+                help="Selecciona el par para analizar"
+            )
+            
+            # Timeframe
+            timeframe = st.selectbox(
+                "Timeframe",
+                options=["1m", "5m", "15m", "1h", "4h", "1d"],
+                help="Intervalo de tiempo para el análisis"
+            )
+            
+            # Actualización automática
+            auto_refresh = st.checkbox(
+                "Actualización Automática",
+                value=True,
+                help="Actualizar datos automáticamente"
+            )
+            
+            if auto_refresh:
+                refresh_interval = st.slider(
+                    "Intervalo (segundos)",
+                    min_value=5,
+                    max_value=300,
+                    value=60
+                )
+                
+            # Guardar en session state
+            st.session_state.update({
+                'exchange': exchange,
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'auto_refresh': auto_refresh,
+                'refresh_interval': refresh_interval if auto_refresh else None
+            })
+            
+            # Información del sistema
+            st.markdown("---")
+            st.markdown("### 📊 Estado del Sistema")
+            
+            if self.realtime_service:
+                st.success("✅ Servicio en tiempo real activo")
+            else:
+                st.error("❌ Servicio en tiempo real inactivo")
+                
+    async def _render_realtime_analysis(self):
+        """Renderiza el análisis en tiempo real."""
+        try:
+            symbol = st.session_state.symbol
+            
+            # Obtener datos en tiempo real
+            data = await self.realtime_service.get_full_data(symbol)
+            
+            # Mostrar precio actual
+            col1, col2, col3, col4 = st.columns(4)
             
             with col1:
                 st.metric(
-                    "Volumen Total (24h)",
-                    f"${overview['total_volume']:,.2f}"
+                    "Precio Actual",
+                    f"${data['price']:,.2f}",
+                    f"{data['change_24h']:.2%}"
                 )
                 
             with col2:
                 st.metric(
-                    "Sentimiento del Mercado",
-                    overview['market_sentiment']
+                    "Volumen 24h",
+                    f"${data['volume_24h']:,.0f}"
                 )
                 
             with col3:
                 st.metric(
-                    "Índice de Volatilidad",
-                    f"{overview['volatility_index']:.2%}"
+                    "Máximo 24h",
+                    f"${data['high_24h']:,.2f}"
                 )
                 
-        except Exception as e:
-            st.error(f"Error al cargar la visión general: {str(e)}")
-
-    async def _render_price_charts(self):
-        """Renderiza gráficos de precios"""
-        st.subheader("Análisis de Precios")
-        
-        try:
-            market_data = await self.connector.get_market_data()
-            
-            for pair, data in market_data.items():
-                fig = go.Figure(data=[
-                    go.Candlestick(
-                        x=data['timestamp'],
-                        open=data['open'],
-                        high=data['high'],
-                        low=data['low'],
-                        close=data['close'],
-                        name=pair
-                    )
-                ])
-                
-                fig.update_layout(
-                    title=f"{pair} - Gráfico de Velas",
-                    xaxis_title="Fecha",
-                    yaxis_title="Precio",
-                    height=400
+            with col4:
+                st.metric(
+                    "Mínimo 24h",
+                    f"${data['low_24h']:,.2f}"
                 )
                 
-                st.plotly_chart(fig, use_container_width=True)
-                
-        except Exception as e:
-            st.error(f"Error al renderizar gráficos: {str(e)}")
-
-    def _render_correlation_matrix(self):
-        """Renderiza la matriz de correlación"""
-        st.subheader("Matriz de Correlación")
-        
-        try:
-            report = asyncio.run(self.report_generator.generate_market_report())
-            correlations = report["correlation_matrix"]
-            
-            # Convertir el diccionario de correlaciones a DataFrame
-            pairs = list(self.connector.trading_pairs)
-            corr_matrix = pd.DataFrame(index=pairs, columns=pairs)
-            
-            for pair1 in pairs:
-                for pair2 in pairs:
-                    if pair1 == pair2:
-                        corr_matrix.loc[pair1, pair2] = 1.0
-                    else:
-                        key = f"{pair1}_{pair2}_correlation"
-                        rev_key = f"{pair2}_{pair1}_correlation"
-                        value = correlations.get(key) or correlations.get(rev_key) or 0
-                        corr_matrix.loc[pair1, pair2] = value
-            
-            fig = px.imshow(
-                corr_matrix,
-                labels=dict(color="Correlación"),
-                color_continuous_scale="RdBu"
+            # Análisis técnico
+            market_data = await self.connector.get_kline_data(
+                symbol,
+                interval=st.session_state.timeframe
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            analysis = await self.analyst.analyze(market_data)
             
+            # Mostrar análisis
+            st.markdown("### 📈 Análisis Técnico")
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                # Gráfico de precios (implementar con plotly)
+                pass
+                
+            with col2:
+                # Señales y recomendaciones
+                st.markdown(f"**Tendencia:** {analysis['trend']}")
+                st.markdown(f"**RSI:** {analysis['indicators']['rsi']:.2f}")
+                
+                signal = analysis['signals']
+                if signal['action'] != 'hold':
+                    st.info(
+                        f"Señal: {signal['action'].upper()} "
+                        f"(Confianza: {signal['confidence']:.2%})"
+                    )
+                    
+                    with st.expander("Ver Razones"):
+                        for reason in signal['reasons']:
+                            st.write(f"• {reason}")
+                            
         except Exception as e:
-            st.error(f"Error al renderizar matriz de correlación: {str(e)}")
-
-    async def _render_risk_assessment(self):
-        """Renderiza la evaluación de riesgo"""
-        st.subheader("Evaluación de Riesgo")
+            logger.error(f"Error en análisis en tiempo real: {str(e)}")
+            st.error(f"Error: {str(e)}")
+            
+    def _render_portfolio(self):
+        """Renderiza la sección de portfolio."""
+        st.info("Sección de Portfolio en desarrollo")
         
+    async def cleanup(self):
+        """Limpia recursos y cierra conexiones."""
         try:
-            report = await self.report_generator.generate_market_report()
-            risk = report["risk_assessment"]
-            
-            # Gauge chart para nivel de confianza
-            fig = go.Figure(go.Indicator(
-                mode = "gauge+number",
-                value = risk["confidence_level"] * 100,
-                title = {'text': f"Nivel de Confianza - {risk['potential_movement'].title()}"},
-                gauge = {
-                    'axis': {'range': [0, 100]},
-                    'bar': {'color': "darkblue"},
-                    'steps': [
-                        {'range': [0, 33], 'color': "lightgray"},
-                        {'range': [33, 66], 'color': "gray"},
-                        {'range': [66, 100], 'color': "darkgray"}
-                    ]
-                }
-            ))
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
+            if self.realtime_service:
+                await self.realtime_service.close()
+            logger.info("Recursos liberados correctamente")
         except Exception as e:
-            st.error(f"Error al renderizar evaluación de riesgo: {str(e)}")
-
-def main():
-    """Función principal para ejecutar el dashboard"""
-    api_key = st.secrets["BYBIT_API_KEY"]
-    api_secret = st.secrets["BYBIT_API_SECRET"]
-    
-    dashboard = TradingDashboard(api_key, api_secret)
-    dashboard.run()
-
-if __name__ == "__main__":
-    main() 
+            logger.error(f"Error liberando recursos: {str(e)}") 
