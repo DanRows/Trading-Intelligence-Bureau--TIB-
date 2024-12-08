@@ -38,3 +38,36 @@ class BybitConnector(BaseConnector):
         except Exception as e:
             logger.error(f"Error obteniendo datos de mercado: {str(e)}")
             raise
+            
+    async def get_orderbook(self, symbol: str) -> Dict[str, Any]:
+        """Obtiene el libro de órdenes para un símbolo."""
+        try:
+            response = self.client.get_orderbook(
+                category="spot",
+                symbol=symbol,
+                limit=50
+            )
+            return response['result']
+        except Exception as e:
+            logger.error(f"Error obteniendo orderbook: {str(e)}")
+            raise
+            
+    async def get_recent_trades(self, symbol: str) -> pd.DataFrame:
+        """Obtiene trades recientes para un símbolo."""
+        try:
+            response = self.client.get_public_trading_history(
+                category="spot",
+                symbol=symbol,
+                limit=100
+            )
+            
+            df = pd.DataFrame(response['result']['list'])
+            df['timestamp'] = pd.to_datetime(df['time'], unit='ms')
+            df['price'] = df['price'].astype(float)
+            df['size'] = df['size'].astype(float)
+            
+            return df
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo trades: {str(e)}")
+            raise

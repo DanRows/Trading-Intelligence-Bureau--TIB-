@@ -3,7 +3,6 @@ import logging
 from src.config.settings import Settings
 from src.data.base_connector import BaseConnector
 from src.data.bybit_connector import BybitConnector
-from src.data.binance_connector import BinanceConnector
 
 logger = logging.getLogger(__name__)
 
@@ -11,8 +10,7 @@ class ExchangeFactory:
     """Factory para crear conectores de exchanges."""
     
     _connectors: Dict[str, Type[BaseConnector]] = {
-        'bybit': BybitConnector,
-        'binance': BinanceConnector
+        'bybit': BybitConnector
     }
     
     @classmethod
