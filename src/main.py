@@ -1,18 +1,18 @@
 import os
 import sys
 from pathlib import Path
+import asyncio
 
 # Agregar el directorio raíz al PYTHONPATH
-ROOT_DIR = Path(__file__).parent.parent
+ROOT_DIR = Path(__file__).parent
 sys.path.append(str(ROOT_DIR))
 
 import streamlit as st
 from src.config.settings import Settings
 from src.data.exchange_factory import ExchangeFactory
-from src.analyzer import MarketAnalyzer
 from src.dashboard import Dashboard
 
-def main():
+async def main():
     """Función principal de la aplicación."""
     try:
         # Configurar página
@@ -29,12 +29,12 @@ def main():
         exchange = ExchangeFactory.create_exchange(settings)
         
         # Inicializar y renderizar dashboard
-        dashboard = Dashboard(settings, exchange)
-        dashboard.render()
+        dashboard = Dashboard(settings=settings, exchange=exchange)
+        await dashboard.render()
         
     except Exception as e:
         st.error(f"Error inicializando la aplicación: {str(e)}")
         raise
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) 
