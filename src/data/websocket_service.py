@@ -1,95 +1,110 @@
-import websocket
 import json
 import logging
-from typing import Dict, Any, Callable
-import threading
-from queue import Queue
-import time
+import websockets
+import asyncio
+from typing import Dict, Any, Optional, Callable
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 class WebSocketService:
-    def __init__(self):
-        self.ws = None
-        self.data_queue = Queue()
-        self.subscriptions = {}
+    """Servicio de WebSocket para datos en tiempo real."""
+    
+    def __init__(self, url: str, on_message: Callable[[Dict[str, Any]], None]):
+        self.url = url
+        self.on_message = on_message
+        self.ws: Optional[websockets.WebSocketClientProtocol] = None
         self.is_connected = False
+        self.last_message_time: Optional[datetime] = None
         self.reconnect_delay = 5  # segundos
+        self.max_reconnect_delay = 300  # 5 minutos
         
-    def connect(self, on_data: Callable[[Dict[str, Any]], None]):
-        """Inicia la conexión websocket"""
-        def on_message(ws, message):
+    async def connect(self):
+        """Establece conexión WebSocket con reintentos."""
+        while True:
             try:
-                data = json.loads(message)
-                self.data_queue.put(data)
-                on_data(data)
+                async with websockets.connect(self.url) as websocket:
+                    self.ws = websocket
+                    self.is_connected = True
+                    logger.info("Conexión WebSocket establecida")
+                    await self._handle_messages()
+                    
+            except websockets.exceptions.ConnectionClosed:
+                logger.warning("Conexión WebSocket cerrada, reintentando...")
+                await self._handle_reconnection()
+                
             except Exception as e:
-                logger.error(f"Error processing message: {str(e)}")
-
-        def on_error(ws, error):
-            logger.error(f"WebSocket error: {str(error)}")
-            self.is_connected = False
-
-        def on_close(ws, close_status_code, close_msg):
-            logger.info("WebSocket connection closed")
-            self.is_connected = False
-            # Intentar reconexión
-            time.sleep(self.reconnect_delay)
-            self.connect(on_data)
-
-        def on_open(ws):
-            logger.info("WebSocket connection established")
-            self.is_connected = True
-            # Suscribirse a los símbolos
-            for symbol in self.subscriptions:
-                self.subscribe(symbol)
-
-        # Configurar websocket
-        self.ws = websocket.WebSocketApp(
-            "wss://streamer.finance.yahoo.com/",
-            on_message=on_message,
-            on_error=on_error,
-            on_close=on_close,
-            on_open=on_open
-        )
-
-        # Iniciar websocket en un hilo separado
-        ws_thread = threading.Thread(target=self.ws.run_forever)
-        ws_thread.daemon = True
-        ws_thread.start()
-
-    def subscribe(self, symbol: str):
-        """Suscribe a un símbolo"""
-        if not self.is_connected:
-            self.subscriptions[symbol] = True
-            return
-
+                logger.error(f"Error en WebSocket: {str(e)}")
+                await self._handle_reconnection()
+                
+    async def _handle_messages(self):
+        """Procesa mensajes entrantes del WebSocket."""
         try:
-            subscribe_message = {
-                "subscribe": [f"{symbol}"]
-            }
-            self.ws.send(json.dumps(subscribe_message))
-            logger.info(f"Subscribed to {symbol}")
+            async for message in self.ws:
+                try:
+                    # Validar que el mensaje no esté vacío
+                    if not message:
+                        logger.warning("Mensaje WebSocket vacío recibido")
+                        continue
+                        
+                    # Intentar parsear el JSON
+                    data = json.loads(message)
+                    
+                    # Validar estructura básica
+                    if not isinstance(data, dict):
+                        logger.warning(f"Formato de mensaje inesperado: {type(data)}")
+                        continue
+                        
+                    # Procesar mensaje
+                    self.last_message_time = datetime.utcnow()
+                    await self.on_message(data)
+                    
+                except json.JSONDecodeError as e:
+                    logger.error(f"Error decodificando mensaje JSON: {str(e)}")
+                    continue
+                    
+                except Exception as e:
+                    logger.error(f"Error procesando mensaje: {str(e)}")
+                    continue
+                    
         except Exception as e:
-            logger.error(f"Error subscribing to {symbol}: {str(e)}")
-
-    def unsubscribe(self, symbol: str):
-        """Cancela la suscripción a un símbolo"""
-        if symbol in self.subscriptions:
-            del self.subscriptions[symbol]
-
-        if self.is_connected:
+            logger.error(f"Error en el loop de mensajes: {str(e)}")
+            self.is_connected = False
+            raise
+            
+    async def _handle_reconnection(self):
+        """Maneja la reconexión con backoff exponencial."""
+        self.is_connected = False
+        delay = self.reconnect_delay
+        
+        while not self.is_connected:
+            logger.info(f"Reintentando conexión en {delay} segundos...")
+            await asyncio.sleep(delay)
+            
             try:
-                unsubscribe_message = {
-                    "unsubscribe": [f"{symbol}"]
-                }
-                self.ws.send(json.dumps(unsubscribe_message))
-                logger.info(f"Unsubscribed from {symbol}")
+                await self.connect()
+                self.reconnect_delay = 5  # Reset delay on successful connection
+                break
+                
             except Exception as e:
-                logger.error(f"Error unsubscribing from {symbol}: {str(e)}")
-
-    def close(self):
-        """Cierra la conexión websocket"""
+                logger.error(f"Error en reconexión: {str(e)}")
+                delay = min(delay * 2, self.max_reconnect_delay)
+                
+    async def send(self, data: Dict[str, Any]):
+        """Envía datos por el WebSocket."""
+        if not self.is_connected:
+            raise ConnectionError("WebSocket no conectado")
+            
+        try:
+            await self.ws.send(json.dumps(data))
+        except Exception as e:
+            logger.error(f"Error enviando mensaje: {str(e)}")
+            self.is_connected = False
+            raise
+            
+    async def close(self):
+        """Cierra la conexión WebSocket."""
         if self.ws:
-            self.ws.close()
-            self.is_connected = False 
+            await self.ws.close()
+        self.is_connected = False
+        logger.info("Conexión WebSocket cerrada") 

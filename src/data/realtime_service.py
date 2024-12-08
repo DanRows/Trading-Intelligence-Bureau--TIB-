@@ -8,6 +8,8 @@ from collections import OrderedDict
 import json
 from ..config.settings import Settings
 from ..data.base_connector import RateLimiter, RateLimitError
+from ..data.market_data_service import MarketDataService
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,8 @@ class RealtimeService:
         # Tarea de actualización periódica
         self.update_task: Optional[asyncio.Task] = None
         self.update_interval = 60  # segundos
+        
+        self.market_data_service = MarketDataService()
         
     async def initialize(self):
         """Inicializa el servicio."""
@@ -193,3 +197,21 @@ class RealtimeService:
             
         self._session = None
         logger.info("Servicio cerrado correctamente")
+        
+    async def get_market_data(self, symbol: str) -> Optional[pd.DataFrame]:
+        """Obtiene datos de mercado con validación."""
+        try:
+            data = await self._fetch_data(symbol)
+            if not data:
+                return None
+                
+            df = self.market_data_service.process_market_data(data)
+            if df is not None:
+                return df
+                
+            logger.error(f"Error procesando datos para {symbol}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo datos de mercado: {str(e)}")
+            return None
