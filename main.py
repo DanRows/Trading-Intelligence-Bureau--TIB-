@@ -3,11 +3,10 @@ import sys
 from pathlib import Path
 
 # Agregar el directorio raíz al PYTHONPATH
-ROOT_DIR = Path(__file__).parent.parent
+ROOT_DIR = Path(__file__).parent
 sys.path.append(str(ROOT_DIR))
 
 import streamlit as st
-import asyncio
 from src.config.settings import Settings
 from src.data.exchange_factory import ExchangeFactory
 from src.dashboard import Dashboard
@@ -29,7 +28,7 @@ def main():
         exchange = ExchangeFactory.create_exchange(settings)
         
         # Inicializar y renderizar dashboard
-        dashboard = Dashboard(settings, exchange)
+        dashboard = Dashboard(settings=settings, exchange=exchange)
         dashboard.render()
         
     except Exception as e:
