@@ -14,6 +14,13 @@ class Dashboard:
     """Dashboard principal de la aplicación."""
     
     def __init__(self, settings: Settings, exchange: BaseConnector):
+        """
+        Inicializa el dashboard.
+        
+        Args:
+            settings: Configuración global
+            exchange: Conector del exchange
+        """
         self.settings = settings
         self.exchange = exchange
         self.market_data = MarketDataService(settings)
