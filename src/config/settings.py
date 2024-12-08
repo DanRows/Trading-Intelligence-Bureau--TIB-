@@ -18,6 +18,9 @@ class Settings:
         self.BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
         self.USE_TESTNET = os.getenv("USE_TESTNET", "true").lower() == "true"
         
+        # Exchange por defecto
+        self.EXCHANGE = os.getenv("EXCHANGE", "bybit")
+        
         # Fuentes de datos
         self.USE_COINGECKO = os.getenv("USE_COINGECKO", "true").lower() == "true"
         self.USE_YAHOO = os.getenv("USE_YAHOO", "true").lower() == "true"
@@ -72,6 +75,19 @@ class Settings:
         
         # Crear directorio de caché si no existe
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        
+    def get(self, key: str, default: any = None) -> any:
+        """
+        Obtiene un valor de configuración.
+        
+        Args:
+            key: Nombre de la configuración
+            default: Valor por defecto si no existe
+            
+        Returns:
+            Valor de la configuración o el valor por defecto
+        """
+        return getattr(self, key, default)
         
     def validate(self) -> bool:
         """
@@ -133,6 +149,7 @@ class Settings:
                 f.write(f"BYBIT_API_KEY={self.BYBIT_API_KEY}\n")
                 f.write(f"BYBIT_API_SECRET={self.BYBIT_API_SECRET}\n")
                 f.write(f"USE_TESTNET={'true' if self.USE_TESTNET else 'false'}\n")
+                f.write(f"EXCHANGE={self.EXCHANGE}\n")
                 f.write(f"USE_COINGECKO={'true' if self.USE_COINGECKO else 'false'}\n")
                 f.write(f"USE_YAHOO={'true' if self.USE_YAHOO else 'false'}\n")
                 f.write(f"MAX_POSITION_SIZE={self.MAX_POSITION_SIZE}\n")
