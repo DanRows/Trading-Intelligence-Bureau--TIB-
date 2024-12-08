@@ -1,172 +1,230 @@
+from typing import Dict, Any, List, Optional
 import pandas as pd
 import numpy as np
-from typing import Dict, Any
+import logging
 from .base_agent import BaseAgent
 from ..analysis.indicators import TechnicalIndicators
-from ..analysis.patterns import CandlePatternAnalyzer
-from ..alerts.alert_manager import AlertManager, AlertPriority
+from ..config.constants import Indicators, TimeFrame
+
+logger = logging.getLogger(__name__)
 
 class TechnicalAnalyst(BaseAgent):
-    def __init__(self, name: str, trading_pair: str):
-        super().__init__(name)
-        self.trading_pair = trading_pair
+    """Agente que analiza datos usando indicadores técnicos."""
+    
+    def __init__(self, name: str, config: Dict[str, Any]):
+        """
+        Inicializa el analista técnico.
+        
+        Args:
+            name: Nombre del analista
+            config: Configuración del analista
+        """
+        super().__init__(name, config)
         self.indicators = TechnicalIndicators()
-        self.pattern_analyzer = CandlePatternAnalyzer()
-        self.alert_manager = AlertManager()
-
-    async def analyze(self, market_data: pd.DataFrame) -> Dict[str, Any]:
-        """Realiza análisis técnico completo"""
-        analysis = await super().analyze(market_data)
+        self.rsi_overbought = config.get('rsi_overbought', 70)
+        self.rsi_oversold = config.get('rsi_oversold', 30)
+        self.metrics['signals'] = []  # Tracking de señales generadas
         
-        # Verificar condiciones para alertas
-        await self._check_alerts(market_data, analysis)
+    async def analyze(self, 
+                     market_data: pd.DataFrame, 
+                     additional_data: Optional[Dict[str, pd.DataFrame]] = None) -> Dict[str, Any]:
+        """
+        Realiza análisis técnico completo.
         
-        return analysis
-        
-    async def _check_alerts(self, market_data: pd.DataFrame, analysis: Dict[str, Any]):
-        """Verifica condiciones para generar alertas"""
-        current_price = market_data['close'].iloc[-1]
-        
-        # Alertas de precio
-        await self.alert_manager.check_price_alerts(
-            self.trading_pair,
-            current_price,
-            self.get_price_alerts_config()
-        )
-        
-        # Alertas de volatilidad
-        volatility = analysis['indicators'].get('volatility', 0)
-        await self.alert_manager.check_volatility_alerts(
-            self.trading_pair,
-            volatility
-        )
-        
-        # Alertas de volumen
-        volume_analysis = analysis['volume_analysis']
-        await self.alert_manager.check_volume_alerts(
-            self.trading_pair,
-            volume_analysis['current_volume'],
-            volume_analysis['avg_volume']
-        )
-        
-        # Alertas de patrones
-        pattern_analysis = analysis['pattern']
-        await self.alert_manager.check_pattern_alerts(
-            self.trading_pair,
-            pattern_analysis
-        )
-        
-    def get_price_alerts_config(self) -> Dict[str, Any]:
-        """Obtiene configuración de alertas de precio"""
-        # Aquí podrías cargar la configuración desde un archivo o base de datos
-        return {
-            'price_levels': [
-                {'price': 50000, 'type': 'resistance'},
-                {'price': 45000, 'type': 'support'}
-            ]
-        }
-
-    def _analyze_trend(self, df: pd.DataFrame) -> str:
-        """Determina la tendencia actual"""
-        sma20 = df['close'].rolling(window=20).mean().iloc[-1]
-        sma50 = df['close'].rolling(window=50).mean().iloc[-1]
-        current_price = df['close'].iloc[-1]
-        
-        if current_price > sma20 and sma20 > sma50:
-            return "bullish"
-        elif current_price < sma20 and sma20 < sma50:
-            return "bearish"
-        return "neutral"
-
-    def _calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> Dict[str, Any]:
-        """Calcula el RSI y su interpretación"""
-        rsi_result = self.indicators.calculate_rsi(df['close'], period)
-        
-        return {
-            'value': rsi_result.value,
-            'overbought': rsi_result.overbought,
-            'oversold': rsi_result.oversold
-        }
-
-    def _calculate_macd(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Calcula el MACD y su interpretación"""
-        macd_result = self.indicators.calculate_macd(df['close'])
-        
-        return {
-            'macd': macd_result.macd,
-            'signal': macd_result.signal,
-            'histogram': macd_result.histogram,
-            'signal_type': 'buy' if macd_result.bullish_crossover else \
-                         'sell' if macd_result.bearish_crossover else 'neutral'
-        }
-
-    def _calculate_support_resistance(self, df: pd.DataFrame) -> Dict[str, float]:
-        """Calcula niveles de soporte y resistencia"""
-        support_levels, resistance_levels = self.indicators.find_support_resistance(df)
-        
-        # Obtener los niveles más cercanos al precio actual
-        current_price = df['close'].iloc[-1]
-        
-        closest_support = min(
-            (level for level in support_levels if level < current_price),
-            default=current_price * 0.95
-        )
-        
-        closest_resistance = min(
-            (level for level in resistance_levels if level > current_price),
-            default=current_price * 1.05
-        )
-        
-        return {
-            'support': float(closest_support),
-            'resistance': float(closest_resistance)
-        }
-
-    def _analyze_volume(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Analiza el volumen y su tendencia"""
-        avg_volume = df['volume'].rolling(window=20).mean().iloc[-1]
-        current_volume = df['volume'].iloc[-1]
-        volume_trend = "high" if current_volume > avg_volume * 1.5 else \
-                      "low" if current_volume < avg_volume * 0.5 else "normal"
-        
-        return {
-            'current_volume': float(current_volume),
-            'avg_volume': float(avg_volume),
-            'volume_trend': volume_trend
-        }
-
-    def _identify_pattern(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Identifica patrones de velas japonesas"""
-        pattern_analysis = self.pattern_analyzer.analyze_candles(df)
-        
-        # Calcular la fuerza del patrón si se encontró uno
-        if pattern_analysis['pattern'] != 'No Pattern':
-            pattern_strength = self.pattern_analyzer.calculate_pattern_strength(
-                pattern_analysis['pattern'],
-                df
-            )
-            pattern_analysis['strength'] = pattern_strength
-        
-        return pattern_analysis
-
-    async def evaluate_performance(self) -> float:
-        """Evalúa la precisión histórica del agente"""
-        if not self.analysis_history:
-            return 0.0
+        Args:
+            market_data: DataFrame principal con datos de mercado
+            additional_data: Datos adicionales opcionales (otros timeframes, etc.)
+        """
+        try:
+            # Preparar datos
+            data = await self._prepare_data(market_data, additional_data)
             
-        correct_predictions = 0
-        total_predictions = len(self.analysis_history) - 1
-        
-        for i in range(total_predictions):
-            current_analysis = self.analysis_history[i]['analysis']
-            next_analysis = self.analysis_history[i + 1]['analysis']
+            # Realizar análisis
+            trend = await self._analyze_trend(data)
+            indicators = await self._calculate_indicators(data)
+            signals = await self._generate_signals(data)
             
-            # Compara la predicción con el resultado real
-            if current_analysis['trend'] == 'bullish' and \
-               next_analysis['indicators']['rsi']['overbought']:
-                correct_predictions += 1
-            elif current_analysis['trend'] == 'bearish' and \
-                 next_analysis['indicators']['rsi']['oversold']:
-                correct_predictions += 1
+            analysis = {
+                'timestamp': pd.Timestamp.now(),
+                'trend': trend,
+                'indicators': indicators,
+                'signals': signals,
+                'metadata': {
+                    'agent': self.name,
+                    'data_points': len(data),
+                    'timeframe': data.index.freq if hasattr(data.index, 'freq') else None
+                }
+            }
+            
+            # Almacenar análisis
+            await self._store_analysis(analysis)
+            
+            # Actualizar métricas
+            if signals['action'] != 'hold':
+                self.metrics['signals'].append({
+                    'timestamp': analysis['timestamp'],
+                    'action': signals['action'],
+                    'confidence': signals['confidence']
+                })
+            
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"Error en análisis: {str(e)}", exc_info=True)
+            raise
+            
+    async def _analyze_trend(self, df: pd.DataFrame) -> str:
+        """Analiza la tendencia del mercado usando EMAs."""
+        try:
+            # Calcular EMAs
+            ema_short = df['close'].ewm(span=9, adjust=False).mean()
+            ema_medium = df['close'].ewm(span=21, adjust=False).mean()
+            ema_long = df['close'].ewm(span=55, adjust=False).mean()
+            
+            # Obtener últimos valores
+            current_price = df['close'].iloc[-1]
+            current_short = ema_short.iloc[-1]
+            current_medium = ema_medium.iloc[-1]
+            current_long = ema_long.iloc[-1]
+            
+            # Determinar tendencia
+            if current_short > current_medium > current_long and current_price > current_short:
+                return "alcista"
+            elif current_short < current_medium < current_long and current_price < current_short:
+                return "bajista"
+            else:
+                return "lateral"
                 
-        return correct_predictions / total_predictions if total_predictions > 0 else 0.0
+        except Exception as e:
+            logger.error(f"Error analizando tendencia: {str(e)}")
+            return "indefinido"
+            
+    async def _calculate_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Calcula indicadores técnicos."""
+        try:
+            # Calcular todos los indicadores
+            results = self.indicators.calculate_all(df)
+            
+            # Agregar interpretaciones
+            last_values = {
+                'rsi': float(results['rsi'].iloc[-1]),
+                'macd': float(results['macd'].iloc[-1]),
+                'macd_signal': float(results['signal'].iloc[-1]),
+                'bb_upper': float(results['upper'].iloc[-1]),
+                'bb_lower': float(results['lower'].iloc[-1]),
+                'current_price': float(df['close'].iloc[-1])
+            }
+            
+            # Interpretar RSI
+            last_values['rsi_condition'] = (
+                'sobrecompra' if last_values['rsi'] > self.rsi_overbought
+                else 'sobreventa' if last_values['rsi'] < self.rsi_oversold
+                else 'neutral'
+            )
+            
+            # Interpretar MACD
+            last_values['macd_cross'] = (
+                'bullish' if last_values['macd'] > last_values['macd_signal']
+                else 'bearish' if last_values['macd'] < last_values['macd_signal']
+                else 'neutral'
+            )
+            
+            # Interpretar Bollinger Bands
+            last_values['bb_position'] = (
+                'superior' if last_values['current_price'] > last_values['bb_upper']
+                else 'inferior' if last_values['current_price'] < last_values['bb_lower']
+                else 'dentro'
+            )
+            
+            return last_values
+            
+        except Exception as e:
+            logger.error(f"Error calculando indicadores: {str(e)}")
+            return {}
+            
+    async def _generate_signals(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Genera señales de trading basadas en indicadores."""
+        try:
+            indicators = await self._calculate_indicators(df)
+            trend = await self._analyze_trend(df)
+            
+            # Sistema de puntos para señales
+            points = 0
+            max_points = 5
+            reasons = []
+            
+            # RSI
+            if indicators['rsi_condition'] == 'sobreventa':
+                points += 1
+                reasons.append("RSI indica sobreventa")
+            elif indicators['rsi_condition'] == 'sobrecompra':
+                points -= 1
+                reasons.append("RSI indica sobrecompra")
+                
+            # MACD
+            if indicators['macd_cross'] == 'bullish':
+                points += 1
+                reasons.append("Cruce alcista MACD")
+            elif indicators['macd_cross'] == 'bearish':
+                points -= 1
+                reasons.append("Cruce bajista MACD")
+                
+            # Tendencia
+            if trend == "alcista":
+                points += 2
+                reasons.append("Tendencia alcista")
+            elif trend == "bajista":
+                points -= 2
+                reasons.append("Tendencia bajista")
+                
+            # Bollinger Bands
+            if indicators['bb_position'] == 'inferior':
+                points += 1
+                reasons.append("Precio bajo banda inferior")
+            elif indicators['bb_position'] == 'superior':
+                points -= 1
+                reasons.append("Precio sobre banda superior")
+                
+            # Determinar señal y confianza
+            confidence = abs(points) / max_points
+            
+            if points > 0:
+                action = "buy"
+            elif points < 0:
+                action = "sell"
+            else:
+                action = "hold"
+                confidence = 0
+                
+            return {
+                'action': action,
+                'confidence': round(confidence, 2),
+                'points': points,
+                'reasons': reasons,
+                'indicators': indicators
+            }
+            
+        except Exception as e:
+            logger.error(f"Error generando señales: {str(e)}")
+            return {
+                'action': 'hold',
+                'confidence': 0,
+                'points': 0,
+                'reasons': [f"Error: {str(e)}"],
+                'indicators': {}
+            }
+
+    def get_metrics_summary(self) -> Dict[str, Any]:
+        """Retorna un resumen de las métricas del agente."""
+        summary = super().get_metrics_summary()
+        
+        # Agregar métricas específicas del analista técnico
+        if self.metrics['signals']:
+            summary.update({
+                'total_signals': len(self.metrics['signals']),
+                'buy_signals': sum(1 for s in self.metrics['signals'] if s['action'] == 'buy'),
+                'sell_signals': sum(1 for s in self.metrics['signals'] if s['action'] == 'sell'),
+                'avg_confidence': sum(s['confidence'] for s in self.metrics['signals']) / len(self.metrics['signals'])
+            })
+            
+        return summary
