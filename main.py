@@ -12,7 +12,7 @@ from src.config.settings import Settings
 from src.data.exchange_factory import ExchangeFactory
 from src.dashboard import Dashboard
 
-async def main():
+def main():
     """Función principal de la aplicación."""
     try:
         # Configurar página
@@ -30,11 +30,11 @@ async def main():
         
         # Inicializar y renderizar dashboard
         dashboard = Dashboard(settings, exchange)
-        await dashboard.render()
+        dashboard.render()
         
     except Exception as e:
         st.error(f"Error inicializando la aplicación: {str(e)}")
         raise
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

@@ -26,7 +26,7 @@ class Dashboard:
         self.market_data = MarketDataService(settings)
         self.analyzer = MarketAnalyzer(settings)
         
-    async def render(self):
+    def render(self):
         """Renderiza el dashboard completo."""
         try:
             st.title("Trading Intelligence Bureau")
@@ -42,11 +42,11 @@ class Dashboard:
             ])
             
             with tab1:
-                await self._render_market_analysis()
+                self._render_market_analysis()
             with tab2:
-                await self._render_backtesting()
+                self._render_backtesting()
             with tab3:
-                await self._render_portfolio()
+                self._render_portfolio()
                 
         except Exception as e:
             logger.error(f"Error renderizando dashboard: {str(e)}")
@@ -86,13 +86,13 @@ class Dashboard:
                 'refresh_rate': refresh_rate if auto_refresh else None
             })
             
-    async def _render_market_analysis(self):
+    def _render_market_analysis(self):
         """Renderiza la sección de análisis de mercado."""
         try:
             symbol = st.session_state.symbol
             
             # Obtener y analizar datos
-            data = await self.exchange.get_market_data(symbol)
+            data = self.exchange.get_market_data(symbol)
             analysis = self.analyzer.analyze_market_data(data)
             
             # Mostrar métricas principales
@@ -131,11 +131,11 @@ class Dashboard:
             logger.error(f"Error en análisis de mercado: {str(e)}")
             st.error(f"Error: {str(e)}")
             
-    async def _render_backtesting(self):
+    def _render_backtesting(self):
         """Renderiza la sección de backtesting."""
         st.info("Sección de backtesting en desarrollo")
         
-    async def _render_portfolio(self):
+    def _render_portfolio(self):
         """Renderiza la sección de portfolio."""
         st.info("Sección de portfolio en desarrollo")
             
